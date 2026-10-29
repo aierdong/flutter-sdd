@@ -121,3 +121,41 @@ Go 版原型在原仓库 `loomidbx-v3` 的 `scripts/sdd-check.ps1` / `sdd-check.
 - 保留，但加一处标注"历史材料，不维护"（`README.md` 已写）；
 - 后续所有结论以 `docs/sdd-thinks/` 为准；
 - 里面的 `skills/`、`templates/` 是草案来源，迁到 `.agents/skills/` 之后就可以当只读参考。
+
+## 六、脚手架化（流程跑通之后）
+
+目标：用脚本把 `.agents/skills/` 与 `AGENTS.md` 打包，同时生成 `project.md`、`steering.md` 模板，新项目一条命令就能起一套流程。
+
+### 先定唯一权威来源，再写脚本
+
+现在同一个技能有两份实体：`docs/sdd-thinks/`（设计）与 `.agents/skills/sdd-grill/`（运行副本），而 `.agents/skills/sdd-grill/` 的所有权属于流程项目、物理位置却在 Demo 仓库里。
+
+**脚本必须从"流程项目的源"取文件，Demo 里的 `.agents/skills/` 是产物，不是源。** 否则同一份 `SKILL.md` 活在两处，迟早漂移——这个坑在上一轮已经踩过一次（两个目录下的 skill 内容不一致）。
+
+建议的源目录形态（在流程项目里，与 `sdd-thinks` 同级）：
+
+```text
+skills/            # 唯一权威来源
+├── sdd-grill/{SKILL.md, rules/, templates/}
+├── sdd-plan/...
+└── sdd-impl/...
+templates/         # 脚手架生成 project.md / steering.md / AGENTS.md 的模板
+```
+
+生成动作：复制 `skills/*` 到目标项目的 `.agents/skills/`，渲染 `AGENTS.md`、`project.md`、`steering.md` 三个模板，只填空（项目名、技术栈、命令、阶段），**不引入分支逻辑**。
+
+### `steering.md` 模板要带的三样
+
+1. **`## 范围外` 段**——每代项目都可能需要排除某些目录（本仓库排除的是流程材料）。模板里留一个空段 + 一句用法说明，比事后补更容易被记住。
+2. **"索引里没有的文档视为未生效"**——这是索引制能成立的前提。
+3. **"规范文档带版本号，改动时同步递增"**——避免规范悄悄变了而没人知道。
+
+### 脚手架本身要版本化
+
+生成的 `AGENTS.md` 与技能会继续演进，脚手架必须有版本（如 `scaffold v0.1`），并在生成的 `AGENTS.md` 顶部标注"由 scaffold vX 生成"。否则三个月后没人知道某个项目用的是哪一版流程。
+
+### 落地前的验收
+
+- 生成的技能目录结构完整：每个技能都有 `SKILL.md`，引用到的 `rules/`、`templates/` 都存在；
+- 生成文档里的相对链接全部可解析；
+- 在一个空项目上跑一遍 `sdd-grill`，能产出 `spec.md` 而不是报错要人补信息。
