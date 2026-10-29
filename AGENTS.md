@@ -34,7 +34,7 @@ sdd-review  →  review.md            结论
 | 实现 | `sdd-impl` | 代码、测试、命令输出 | plan 中每个任务的验证都通过 |
 | 审查 | `sdd-review` | `review.md` | 结论有证据；不通过则回到最靠前的失效步骤 |
 
-技能在 `.agents/skills/<name>/SKILL.md`，模板在 `.sdd/templates/`。执行某个技能前，先完整读取它的 `SKILL.md`，按其中流程做，不要凭记忆简化。
+技能在 `.agents/skills/<name>/SKILL.md`；每个技能自己的模板放在该技能的 `templates/` 下，例如 `sdd-grill` 的 `.agents/skills/sdd-grill/templates/spec.md`。执行某个技能前，先完整读取它的 `SKILL.md`，按其中流程做，不要凭记忆简化。
 
 ## 3. 目录
 
@@ -43,18 +43,19 @@ AGENTS.md
 project.md
 steering.md
 .agents/
-  skills/sdd-grill|sdd-plan|sdd-impl|sdd-review/SKILL.md
-.sdd/
-  templates/spec.md, plan.md, review.md
+  skills/sdd-grill/
+    SKILL.md
+    templates/spec.md
+  skills/sdd-plan|sdd-impl|sdd-review/SKILL.md
 specs/
-  NNN-<slug>/
+  pNN-NNN-<slug>/
     spec.md    # 需求、边界、决策；人审阅
     grill.md   # 访谈决策日志；追加式
     plan.md    # 执行计划；Agent 阅读
     review.md  # 证据与结论
 ```
 
-`NNN` 为三位递增编号，取现有最大值 +1；`slug` 用英文短横线。
+目录名 `pNN-NNN-<slug>`：`pNN` 是两位阶段号（`p00`、`p01`…，当前阶段见 `project.md`），`NNN` 是该阶段内的三位序号（从 `001` 起），`slug` 用英文短横线。新 spec 取当前阶段现有最大编号 +1；换阶段时序号从 `001` 重新开始。
 
 DSH 按项目根只扫 `.agents/skills/` 一层，技能必须是 `<name>/SKILL.md`；嵌套的 bucket 目录不会被发现。
 
@@ -79,10 +80,10 @@ DSH 按项目根只扫 `.agents/skills/` 一层，技能必须是 `<name>/SKILL.
 
 ## 6. 流程自身也要迭代
 
-`AGENTS.md`、技能和模板都是受管文档。流程变更同样作为一个 spec 提出；批准后一次性同步改这三处，避免文档与技能漂移。项目信息变化改 `project.md`；新增或移动知识文档时同步更新 `steering.md`。
+`AGENTS.md`、技能及其模板都是受管文档。流程变更同样作为一个 spec 提出；批准后一次性同步修改，避免文档与技能漂移。项目信息变化改 `project.md`；新增或移动知识文档时同步更新 `steering.md`。
 
 ## 7. 现状
 
-- 已有：`sdd-grill`（`.agents/skills/`）、`spec.md` 模板（`.sdd/templates/`）。
+- 已有：`sdd-grill`（含 `spec.md` 模板，位于 `.agents/skills/sdd-grill/templates/`）。
 - 待建：`sdd-plan`、`sdd-impl`、`sdd-review` 及对应模板；`specs/` 随第一个 spec 创建。
 - 项目信息见 `project.md`，知识索引见 `steering.md`。
