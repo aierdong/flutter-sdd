@@ -1,24 +1,17 @@
 # AGENTS.md
 
-本仓库用一套自定义的 spec-driven development（SDD）流程开发。本文件是流程的入口与最上层约定：声明做什么、按什么顺序做、每一步的闸门是什么。具体做法写在 `.agents/skills/` 的各技能里，两者冲突时以本文件的流程与闸门为准。
+本文件只声明 Agentic SDLC：每一步做什么、按什么顺序做、闸门是什么。它不包含项目本身的信息。
 
-开始任何任务前，按顺序读：本文件 → 当前 spec 的 `spec.md` → `plan.md`（若存在）→ 相关技能的 `SKILL.md`。
+## 1. 读什么
 
-## 1. 项目
+开始任何任务前，必读本文件和 [steering.md](steering.md)。
 
-一个 Flutter 桌面应用，只读浏览 PostgreSQL 的库结构：
+- [steering.md](steering.md)：项目知识的地图索引，指向代码规范、实现方案、技术专题等文档。按索引加载需要的文档，不要凭记忆补规则。
+- [project.md](project.md)：项目目标、范围、约束、工程命令。需要项目上下文时再读。
+- 进入某个 spec 后：读该 spec 的 `spec.md`；执行阶段读 `plan.md`。
+- 执行技能前：完整读取 `.agents/skills/<name>/SKILL.md`。
 
-- 连接一个数据库，枚举其全部 schema，再取每个 schema 下的表。
-- database / schema / table 组成一棵可展开的树。
-- 选中表后可查看：表名、字段列表、约束、外键。
-- 允许刷新某个表的详情信息（表可能在查看期间修改）
-
-它存在的目的是验证上面这套 SDD 流程，不是生产应用。取舍顺序：流程可验证 > 功能完整 > 健壮性与性能。
-
-项目约束：
-
-- 对目标库只读，不写入、不修改。
-- 连接串与密码不进入仓库、日志或错误信息。
+项目信息不写进本文件，写进 `project.md`；本文件只随流程演进。
 
 ## 2. 流程
 
@@ -47,6 +40,8 @@ sdd-review  →  review.md            结论
 
 ```text
 AGENTS.md
+project.md
+steering.md
 .agents/
   skills/sdd-grill|sdd-plan|sdd-impl|sdd-review/SKILL.md
 .sdd/
@@ -84,22 +79,10 @@ DSH 按项目根只扫 `.agents/skills/` 一层，技能必须是 `<name>/SKILL.
 
 ## 6. 流程自身也要迭代
 
-`AGENTS.md`、技能和模板都是受管文档。流程变更同样作为一个 spec 提出；批准后一次性同步改这三处，避免文档与技能漂移。
+`AGENTS.md`、技能和模板都是受管文档。流程变更同样作为一个 spec 提出；批准后一次性同步改这三处，避免文档与技能漂移。项目信息变化改 `project.md`；新增或移动知识文档时同步更新 `steering.md`。
 
 ## 7. 现状
 
 - 已有：`sdd-grill`（`.agents/skills/`）、`spec.md` 模板（`.sdd/templates/`）。
 - 待建：`sdd-plan`、`sdd-impl`、`sdd-review` 及对应模板；`specs/` 随第一个 spec 创建。
-- 第一个 spec 建议：应用的最小可用版本（连接 → 树 → 表详情）。
-- 项目级约定暂以本文件为准，需要时再拆成独立文档。
-
-## 8. 验证命令
-
-应用创建后统一使用：
-
-```bash
-flutter analyze
-flutter test
-```
-
-命令写进 `plan.md`，实际输出贴进 `review.md`。
+- 项目信息见 `project.md`，知识索引见 `steering.md`。
