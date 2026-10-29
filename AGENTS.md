@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本仓库用一套自定义的 spec-driven development（SDD）流程开发。本文件是流程的入口与最上层约定：声明做什么、按什么顺序做、每一步的闸门是什么。具体做法写在 `.sdd/skills/` 的各技能里，两者冲突时以本文件的流程与闸门为准。
+本仓库用一套自定义的 spec-driven development（SDD）流程开发。本文件是流程的入口与最上层约定：声明做什么、按什么顺序做、每一步的闸门是什么。具体做法写在 `.agents/skills/` 的各技能里，两者冲突时以本文件的流程与闸门为准。
 
 开始任何任务前，按顺序读：本文件 → 当前 spec 的 `spec.md` → `plan.md`（若存在）→ 相关技能的 `SKILL.md`。
 
@@ -41,14 +41,15 @@ sdd-review  →  review.md            结论
 | 实现 | `sdd-impl` | 代码、测试、命令输出 | plan 中每个任务的验证都通过 |
 | 审查 | `sdd-review` | `review.md` | 结论有证据；不通过则回到最靠前的失效步骤 |
 
-技能在 `.sdd/skills/<name>/SKILL.md`，模板在 `.sdd/templates/`。执行某个技能前，先完整读取它的 `SKILL.md`，按其中流程做，不要凭记忆简化。
+技能在 `.agents/skills/<name>/SKILL.md`，模板在 `.sdd/templates/`。执行某个技能前，先完整读取它的 `SKILL.md`，按其中流程做，不要凭记忆简化。
 
 ## 3. 目录
 
 ```text
 AGENTS.md
-.sdd/
+.agents/
   skills/sdd-grill|sdd-plan|sdd-impl|sdd-review/SKILL.md
+.sdd/
   templates/spec.md, plan.md, review.md
 specs/
   NNN-<slug>/
@@ -59,6 +60,8 @@ specs/
 ```
 
 `NNN` 为三位递增编号，取现有最大值 +1；`slug` 用英文短横线。
+
+DSH 按项目根只扫 `.agents/skills/` 一层，技能必须是 `<name>/SKILL.md`；嵌套的 bucket 目录不会被发现。
 
 ## 4. 文档契约
 
@@ -85,7 +88,7 @@ specs/
 
 ## 7. 现状
 
-- 已有：`sdd-grill`、`spec.md` 模板。
+- 已有：`sdd-grill`（`.agents/skills/`）、`spec.md` 模板（`.sdd/templates/`）。
 - 待建：`sdd-plan`、`sdd-impl`、`sdd-review` 及对应模板；`specs/` 随第一个 spec 创建。
 - 第一个 spec 建议：应用的最小可用版本（连接 → 树 → 表详情）。
 - 项目级约定暂以本文件为准，需要时再拆成独立文档。

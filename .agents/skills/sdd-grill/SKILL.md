@@ -165,7 +165,7 @@ A: 不回滚。删除已提交，跨库回滚不可行。
 
 ## 阶段 4：组装
 
-1. 用 [templates/spec.md](../../templates/spec.md) 写 `spec.md`。
+1. 用 [.sdd/templates/spec.md](../../../.sdd/templates/spec.md) 写 `spec.md`。
 2. 路径约定：`specs/NNN-<英文短横线slug>/spec.md`，`NNN` 取现有最大编号 +1。决策日志同目录 `grill.md`。
 3. 第 7 节只写真正未决的问题，每个带两个选项。
    **好的访谈之后第 7 节应该接近为空**——如果里面还有"这个需求是否完整""是否有风险"，说明访谈没发生。
