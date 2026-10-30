@@ -6,7 +6,7 @@
 
 校验项：
 
-    L01  头部七项字段齐全且取值合法（类型 / Status / Approved / 上游）
+    L01  头部七项字段齐全且取值合法（类型 / Status / Approved-Tag / 上游）
     L02  第 1–7 节标题齐全
     L03  R 编号连续、不重复、不超过 12 条
     L04  每条 R 有「反例」与「可观察证据」，范畴取值合法
@@ -59,7 +59,7 @@ TOTAL_RULES = 10
 # 规范条款编号的形状：大写前缀 + 序号，如 FSD-08 / SEC-3 / PERF-12。
 STANDARDS_ID = r'[A-Z][A-Z0-9]{1,5}-\d+'
 
-HEAD_FIELDS = ('Spec', '类型', '上游', '附带交付', 'Status', '版本', 'Approved')
+BASE_HEAD_FIELDS = ('Spec', '类型', '上游', '附带交付', 'Status', '版本')
 HEAD_STATUS = ('draft', 'approved', 'stale')
 MATRIX_STATUS = ('已覆盖', '不适用', '已推翻并说明')
 TOUCH_STATUS = ('无冲突', '冲突', '不涉及')
@@ -85,7 +85,8 @@ _R_MARK = re.compile(r'^-\s*\[[ xX]\]\s*\*\*R(\d+)\*\*', re.MULTILINE)
 _PENDING_ITEM = re.compile(r'^\d+\.\s+', re.MULTILINE)
 _PENDING_DIM = re.compile(r'维度[：:]\s*`?([A-Z]\d)')
 _SCOPE_TAG = re.compile(r'\*\*范畴\*\*[：:]\s*([a-z]+)')
-_SHA = re.compile(r'[0-9a-f]{7,40}')
+_APPROVAL_TAG = re.compile(r'^spec/(p\d{2}-\d{3})/approved-(v\d+)$')
+_SPEC_PREFIX = re.compile(r'^(p\d{2}-\d{3})-')
 _COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 
 
@@ -213,25 +214,47 @@ def check_spec(rep: Report, text: str) -> None:
 
 
 def check_head(rep: Report, head: Dict[str, str]) -> None:
-    """L01 头部七项字段齐全且取值合法。"""
-    for key in HEAD_FIELDS:
+    """L01 头部字段齐全且取值合法。"""
+    for key in BASE_HEAD_FIELDS:
         if key not in head:
             rep.fail('L01', 'spec.md 头部缺字段「%s」' % key)
     rep.spec_type = head.get('类型', '')
     if rep.spec_type not in REQUIRED_DIMS:
         rep.fail('L01', '类型必须是 new / extend / fix，实际「%s」' % rep.spec_type)
+    spec_id = head.get('Spec', '')
     status = head.get('Status', '')
-    approved = head.get('Approved', '')
+    version = head.get('版本', '')
+    if 'Approved' in head:
+        rep.fail('L01', 'spec.md 头部不得使用 Approved；请用 Approved-Tag')
+    if 'Approved-Tag' not in head:
+        rep.fail('L01', 'spec.md 头部缺字段「Approved-Tag」')
+    else:
+        _check_tag_approval(rep, spec_id, version, status, head.get('Approved-Tag', ''))
     if status not in HEAD_STATUS:
         rep.fail('L01', 'Status 必须是 draft / approved / stale，实际「%s」' % status)
-    elif status == 'approved':
-        if not _SHA.fullmatch(approved):
-            rep.fail('L01', 'Status 为 approved 时 Approved 必须是 commit SHA，实际「%s」' % approved)
-    elif approved != '—':
-        rep.fail('L01', 'Status 不是 approved 时 Approved 必须为「—」，实际「%s」' % approved)
     if rep.spec_type in ('extend', 'fix') and head.get('上游', '—') == '—':
         rep.fail('L01', '%s 型必须填写上游 spec 编号' % rep.spec_type)
     rep.ok('L01')
+
+
+def _check_tag_approval(rep: Report, spec_id: str, version: str, status: str, tag: str) -> None:
+    """Approved-Tag 必须匹配 spec 前缀与版本。"""
+    if status != 'approved':
+        if status in HEAD_STATUS and tag != '—':
+            rep.fail('L01', 'Status 不是 approved 时 Approved-Tag 必须为「—」，实际「%s」' % tag)
+        return
+    match = _APPROVAL_TAG.fullmatch(tag)
+    if match is None:
+        rep.fail('L01', 'Status 为 approved 时 Approved-Tag 必须是 spec/pNN-NNN/approved-vN，实际「%s」' % tag)
+        return
+    prefix = _SPEC_PREFIX.match(spec_id)
+    if prefix is None:
+        rep.fail('L01', 'Spec 必须形如 pNN-NNN-<slug>，实际「%s」' % spec_id)
+        return
+    if match.group(1) != prefix.group(1):
+        rep.fail('L01', 'Approved-Tag 的 spec 前缀「%s」与 Spec「%s」不一致' % (match.group(1), spec_id))
+    if match.group(2) != version:
+        rep.fail('L01', 'Approved-Tag 的版本「%s」与 版本「%s」不一致' % (match.group(2), version))
 
 
 def check_rs(rep: Report, section: str) -> None:

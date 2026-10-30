@@ -47,13 +47,15 @@ sdd-review  →  证据与结论
 - 不改产品代码
 - 不做项目级路线图拆分（多个需求之间怎么排期，不是这一层的事）
 
+**项目无关**：本 Skill 与模板要能直接移植到其它项目；不得写死具体 spec 编号、旧流程兼容分支或历史决策，示例统一用 `pNN-NNN`。
+
 **三条硬规则**：
 
 1. **访谈期间不写 spec。** 一旦开始起草，提问就会停——这是长会话里最稳定的退化模式。
 2. **一次一问。** 一次抛多个问题等于让人扫读，等于没问。
 3. **事实自己查，决定必须问人。** 能用文件和命令确认的，不许占用人的注意力。
 
-**第四条（批准相关，与 §阶段 4 配套）**：Agent **不得创建、不得修改、不得代签**批准 commit；`Status: approved` 与 `Approved: <sha>` 只能由人填。
+**第四条（批准相关，与 §阶段 4 配套）**：Agent **不得创建、不得移动、不得代签** approval tag；`Status: approved` 与 `Approved-Tag` 只能由人填。
 
 ## 输入
 
@@ -69,7 +71,7 @@ sdd-review  →  证据与结论
 | 型 | 判定 | 典型说法 | 必读 |
 |---|---|---|---|
 | **新建** new | 系统里还没有这项能力 | "我要一个已有连接的列表页面" | 按 `steering.md` 查规范与设计、相似既有实现、可复用的组件 |
-| **增量** extend | 在既有页面或 spec 上加能力 | "在 spec p00-001 的基础上，给列表加删除" | 上游 `spec.md` 全文（R / 不做 / 边界）、相关代码与测试 |
+| **增量** extend | 在既有页面或 spec 上加能力 | "在 spec pNN-NNN 的基础上，给列表加删除" | 上游 `spec.md` 全文（R / 不做 / 边界）、相关代码与测试 |
 | **修正** fix | 既有行为不对或不完整 | "删除应该显示成功，现在显示失败" | 当前实现、既有测试、谁在依赖现状 |
 
 **判定护栏**：只要需求里提到了既有页面、既有功能或 spec 编号，**默认按增量处理**，除非人明确说要替换它。把增量当新建，会导致同一个能力被定义两遍。
@@ -80,8 +82,8 @@ sdd-review  →  证据与结论
 >
 > A. **修订原 spec**：在原文件上改（`版本: v2`），旧批准立即作废，重新走一次批准。
 >   适合：原 spec 还没实现完，或这次只是补完遗漏。
-> B. **新 spec + 引用上游**：新编号，头部写 `上游: p00-001`，`p00-001` 的 R 保持不变，本 spec 声明它取代/扩展了哪几条。
->   适合：`p00-001` 已经实现并验收，这次是独立可验收的新能力。
+> B. **新 spec + 引用上游**：新编号，头部写 `上游: pNN-NNN`，上游 spec 的 R 保持不变，本 spec 声明它取代/扩展了哪几条。
+>   适合：上游 spec 已经实现并验收，这次是独立可验收的新能力。
 
 这个选择的后果完全不同：A 会让旧批准失效，B 会让两个 spec 并存、需要维护引用关系。**不要替人决定。**
 
@@ -203,7 +205,7 @@ A: 不回滚。删除已提交，跨库回滚不可行。
 
 | 闸门 | 判据 | 谁来判 | 不通过怎么办 |
 |---|---|---|---|
-| 头字段 | Spec / 类型 / 上游 / 附带交付 / Status / 版本 / Approved 七项齐全且取值合法 | `sdd_lint.py` | 补齐 |
+| 头字段 | Spec / 类型 / 上游 / 附带交付 / Status / 版本 / Approved-Tag 七项齐全且取值合法 | `sdd_lint.py` | 补齐 |
 | 结构 | 第 1–7 节标题齐全 | `sdd_lint.py` | 补齐 |
 | 规模 | R 编号连续、1 ≤ 数量 ≤ 12 | `sdd_lint.py` | 拆需求 |
 | 可测条目 | 每条 R 有 `**反例**` 与 `**可观察证据**` 且非空 | `sdd_lint.py` | 回去问 |
@@ -247,18 +249,21 @@ python .agents/skills/sdd-grill/tools/sdd_lint.py specs/pNN-NNN-<slug>
 
 批准是**人的动作**，不是 Agent 的动作：
 
-1. Agent 交付时 `Status` 只能是 `draft`，`Approved` 只能是 `—`。
-2. 人读完第 1–6 节，自己提交一个**只包含 `spec.md`** 的 commit（`grill.md` 不进批准 commit——它不是审批必需物）。
-3. 人把该 commit 的 SHA 填进 `Approved`、把 `Status` 改成 `approved`，作为第二次提交或 amend 进同一个 commit。
-4. Agent 之后必须校验：`git diff <Approved> -- spec.md` 为空。审阅区一变，`Status` 回落 `draft`，旧 `Approved` 作废，任何基于它的 `plan.md` 标 `stale`。
+1. Agent 交付时 `Status` 只能是 `draft`，`Approved-Tag` 只能是 `—`。
+2. 人读完第 1–6 节，把 `Status` 改成 `approved`、`Approved-Tag` 填 `spec/<pNN-NNN>/approved-v<版本号>`，提交一次（`spec.md`；`grill.md` 可以同 commit，它不是审批必需物）。
+3. 人在同一个 commit 上创建同名 annotated tag，例如 `spec/pNN-NNN/approved-vN`。
+4. Agent 之后必须校验：tag 存在；tag 名与 `Approved-Tag`、`版本`、spec 前缀一致；`git diff <tag> -- spec.md` 为空；`Status` 为 `approved`。任一不满足就停，要求人重新批准。
+5. `approved` 后 spec 冻结：任何改动都要 `版本` +1、`Status` 回 `draft`、`Approved-Tag` 回 `—`，重新评审并打新 tag；旧 tag 保留，不得移动或复用。审阅区一变，基于旧 tag 的 `plan.md` 标 `stale`。
 
-`sdd_lint.py` 会检查两件事：`Status: approved` 时 `Approved` 必须是 7–40 位十六进制 SHA；`Status` 不是 `approved` 时 `Approved` 必须是 `—`。**Agent 不得代签，也不得"为了跑通 lint"补一个 SHA。**
+人工可以用 `tools/approve_spec.py` 执行同一流程：`python3 .agents/skills/sdd-grill/tools/approve_spec.py specs/pNN-NNN-<slug>`。它会先跑 lint、设置 `Status` / `Approved-Tag`、commit、打 annotated tag；`--push` 可选。脚本不替人做批准决定。
+
+`sdd_lint.py` 会检查 `Approved-Tag` 的命名格式（`spec/pNN-NNN/approved-vN`），不再要求 SHA；tag 是否存在、是否指向当前内容，由 Agent 用 git 校验。**Agent 不得代签，也不得"为了跑通 lint"补 tag 或 SHA。**
 
 ## 输出说明
 
 给人看的四行，不要长：
 
-1. **结论**：一句话需求描述 + 类型 + R 的条数（增量/修正附 `上游: p00-001`）
+1. **结论**：一句话需求描述 + 类型 + R 的条数（增量/修正附 `上游: pNN-NNN`）
 2. **闸门**：`sdd_lint.py` 的退出码与通过项数 + 维度覆盖情况（覆盖 x / 不适用 y）+ 遗留问题数
 3. **成本**：问题数 / 上限（有追加就写 `+4`）、工具调用 / 预算
 4. **下一步**：请人读第 1–6 节并批准；如有未决问题，只列出需要人决定的那几条
