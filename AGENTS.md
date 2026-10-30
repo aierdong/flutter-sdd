@@ -29,7 +29,7 @@ sdd-review  →  review.md            结论
 
 | 步骤 | 技能 | 产出 | 通过条件 |
 |---|---|---|---|
-| 访谈 | `sdd-grill` | `spec.md`（第 1–7 节）、`grill.md` | 人明确批准，Status 置为 `approved` 并记录批准凭据 |
+| 访谈 | `sdd-grill` | `spec.md`（第 1–7 节）、`grill.md` | `python .agents/skills/sdd-grill/tools/sdd_lint.py specs/pNN-NNN-<slug>` 退出码 0；人明确批准，Status 置为 `approved` 并记录批准凭据 |
 | 计划 | `sdd-plan` | `plan.md` | 每条 R 都有设计、任务与验证；无待决问题 |
 | 实现 | `sdd-impl` | 代码、测试、命令输出 | plan 中每个任务的验证都通过 |
 | 审查 | `sdd-review` | `review.md` | 结论有证据；不通过则回到最靠前的失效步骤 |
@@ -46,6 +46,9 @@ steering.md
   skills/sdd-grill/
     SKILL.md
     templates/spec.md
+    templates/grill.md
+    rules/dimensions.md
+    tools/sdd_lint.py     # 闸门校验，单文件纯标准库（L01–L10）
   skills/sdd-plan|sdd-impl|sdd-review/SKILL.md
 specs/
   pNN-NNN-<slug>/

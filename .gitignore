@@ -43,3 +43,9 @@ app.*.map.json
 .env
 .env.*
 !.env.example
+
+# WorkBuddy local data (skills junction points to .agents/skills)
+.workbuddy/
+
+# Python
+__pycache__/
