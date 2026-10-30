@@ -10,7 +10,7 @@
 | 附带交付 | `—` |
 | Status | `approved` |
 | 版本 | `v3` |
-| Approved | `cc77419` |
+| Approved | `d8f1c1177c5de2f0c3457f02de06bd8f5a76335f` |
 
 ## 1. 背景与问题
 
