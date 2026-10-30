@@ -8,9 +8,9 @@
 | 类型 | `fix` |
 | 上游 | `p00-001-schema-tables-page` |
 | 附带交付 | `—` |
-| Status | `draft` |
+| Status | `approved` |
 | 版本 | `v1` |
-| Approved | `—` |
+| Approved | `0fbfe32d4452f3233539d16852e2ad1413fa9b74` |
 
 ## 1. 背景与问题
 
