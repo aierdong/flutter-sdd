@@ -9,8 +9,8 @@
 | 主题 | 文档 | 状态 | 什么时候读 |
 |---|---|---|---|
 | 项目自述：我是谁、做什么、常用命令（**只作背景，不构成约束**） | [project.md](project.md) | 已有 | 需要项目背景时 |
-| 代码规范 | [docs/standards/coding.md](docs/standards/coding.md) | 已有（v1，可审计） | 写代码前必读；实现自检与审查时按 FSD-01–FSD-12 和审计动作 A1–A9 逐项核对 |
-| 界面设计 | [docs/standards/ui.md](docs/standards/ui.md) | 已有（v1） | 写 `lib/ui/**`、`lib/core/theme/**`、`lib/app.dart` 前必读；按 UI-01–UI-08 与第 7 节验证表逐项核对 |
+| 代码规范 | [docs/standards/coding.md](docs/standards/coding.md) | 已有（v2，可审计） | 写代码前必读；实现自检与审查时按 FSD-01–FSD-12 和审计动作 A1–A9 逐项核对 |
+| 界面设计 | [docs/standards/ui.md](docs/standards/ui.md) | 已有（v2） | 写 `lib/ui/**`、`lib/core/theme/**`、`lib/app.dart` 前必读；按 UI-01–UI-08 与第 7 节验证表逐项核对 |
 | 测试策略 | `docs/standards/testing.md` | 待建 | 写测试前 |
 | 架构与实现方案 | `docs/design/architecture.md` | 待建 | 做设计决策前 |
 | 技术专题 | `docs/topics/` | 待建 | 遇到具体技术问题时 |

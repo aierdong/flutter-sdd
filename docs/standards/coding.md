@@ -2,9 +2,9 @@
 
 | 字段 | 值 |
 |---|---|
-| 版本 | v1 |
+| 版本 | v2 |
 | 状态 | 生效 |
-| 适用 | `lib/**`、`test/**`、`pubspec.yaml`、`analysis_options.yaml` |
+| 适用 | `lib/**`、`test/**`、`analysis_options.yaml` |
 | 目的 | 约束写法，并让“是否遵守”能用命令、diff 和测试结果判定 |
 
 ## 为什么是“可审计”的
@@ -106,7 +106,7 @@ testWidgets('[p00-001/R4] 刷新失败时显示错误码', (tester) async {
 - 令牌必须与 `test(` / `testWidgets(` 写在同一行的第一个参数里，便于机械检查；`group()` 名称不得带令牌。
 - 每条 R 至少有一个通过的测试；`[support]` 只能出现在 `spec: support` 的测试文件里。
 - 禁止 `skip:`、`tags: 'skip'` 和被注释掉的测试。
-- 测试替身手写，命名 `FakeXxx` 或 `StubXxx`；不引入 mockito 等代码生成。
+- 测试替身手写，命名 `FakeXxx` 或 `StubXxx`。
 
 反例：`test('连接测试', ...)`、`group('R1', ...)`、`test('R1 ...')`（缺方括号和 spec 前缀）。
 
@@ -240,7 +240,7 @@ try {
 - 日志统一走 `lib/core/logging/app_log.dart` 的 `AppLog.info/warn/error`；`lib/` 和 `test/` 中禁止 `print(`、`debugPrint(`。
 - `AppLog.error` 必须接收 `AppFailure`；日志只写 host、port、database 等非敏感字段，密码、完整连接串、驱动异常原文不得进入日志。
 - `ConnectionConfig.toString()` 必须遮蔽密码，输出中固定包含 `password: <redacted>`；必须有测试覆盖。
-- 连接信息只存在于内存：不得写入文件、`SharedPreferences`、数据库或剪贴板；不得为保存连接新增依赖。
+- 连接信息只存在于内存：不得写入文件、`SharedPreferences`、数据库或剪贴板。
 - `lib/**` 中不得出现 `postgres://`、`postgresql://` 字面量；连接串由结构化字段拼装。测试夹具只能使用 `localhost` 和明显的假密码，并放在 `test/fixtures/**`。
 - 错误文案与日志都不得包含密码或完整连接串。
 
@@ -295,11 +295,9 @@ flutter test
 - 通过标准：`dart format` 退出码 0；`flutter analyze` 输出 `No issues found!`；`flutter test` 输出 `All tests passed!` 且没有跳过用例。
 - 分析器告警不得用 ignore 压掉；修代码，或回 spec 改需求。
 
-### FSD-12 规模、依赖与豁免
+### FSD-12 规模与豁免
 
 - 单个手写 Dart 文件不超过 250 行（`test/fixtures/**` 除外）。
-- 第三方依赖只允许：Flutter SDK 自带、模板默认的 `cupertino_icons`、PostgreSQL 驱动（`postgres` 或 spec 第 6 节选定的等价包）、`flutter_lints`。新增任何其它运行时或开发依赖，必须先在 spec 第 6 节记录决策。
-- 不使用代码生成：不引入 `build_runner`、`freezed`、`json_serializable`、`mockito`；测试替身手写。
 - 固定豁免只有：`*.g.dart`、`*.freezed.dart`、`lib/generated/**`、Flutter 平台目录（`android/`、`ios/`、`linux/`、`macos/`、`windows/`、`web/`）。其它豁免必须写进当前 spec 第 6 节并经人批准，不得在代码里静默绕过。
 - 规范变更本身也要版本化：改动本文件时递增顶部版本，并同步 `steering.md`。
 
@@ -473,7 +471,7 @@ git log --format='%B' <base>..HEAD | rg '^R: '
 - 支持代码里没有业务逻辑；`lib/core/` 只有错误、日志、配置、主题。
 - 每条 R 的错误路径有 `AppFailure` 和错误码，UI 实际展示了错误码。
 - 日志、错误文案、UI 中没有密码、完整连接串或驱动异常原文。
-- 新增依赖、豁免与 spec 第 6 节的决策一致。
+- 豁免与 spec 第 6 节的决策一致。
 
 ## 4. 判定与证据
 
@@ -496,7 +494,7 @@ git log --format='%B' <base>..HEAD | rg '^R: '
 | FSD-09 | 无 `print`；脱敏测试通过 | 通过 |
 | FSD-10 | A5 禁止项无违规命中 | 通过 |
 | FSD-11 | 三条命令全绿 | 通过 |
-| FSD-12 | 无新增依赖；A6 无输出 | 通过 |
+| FSD-12 | A6 无输出 | 通过 |
 
 证据必须是命令输出、`file:line` 或测试结果；没有证据的项目按“未检查”处理，不能写“通过”。
 

@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| 版本 | v1 |
+| 版本 | v2 |
 | 状态 | 生效 |
 | 适用 | `lib/ui/**`、`lib/core/theme/**`、`lib/app.dart` |
 | 目的 | 让“界面是否符合设计基调”能用命令、截图和 widget test 判定，而不是靠观感争论 |
@@ -25,7 +25,6 @@
 - `lib/ui/**` 与 `lib/app.dart` 只使用 `package:shadcn_flutter/shadcn_flutter.dart`；主题根用 `ShadcnApp`，不用 `MaterialApp` / `CupertinoApp`。
 - 不得 import `package:flutter/material.dart`、`package:flutter/cupertino.dart`。
 - shadcn_flutter 里没有的组件，先在 `lib/ui/<feature>/widgets/` 里用 `package:flutter/widgets.dart` 自建 `*View`，不得为了凑组件去引 Material。
-- shadcn_flutter 属于新增第三方依赖：按 [coding.md](coding.md) FSD-12，必须先写进当前 spec 第 6 节的决策，再改 `pubspec.yaml`。
 
 ## 2. 密度
 
