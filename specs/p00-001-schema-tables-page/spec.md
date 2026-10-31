@@ -10,7 +10,6 @@
 | 附带交付 | `—` |
 | Status | `approved` |
 | 版本 | `v3` |
-| Approved-Tag | `spec/p00-001/approved-v3` |
 
 ## 1. 背景与问题
 

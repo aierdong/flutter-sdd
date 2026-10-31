@@ -6,7 +6,7 @@
 
 校验项：
 
-    L01  头部七项字段齐全且取值合法（类型 / Status / Approved-Tag / 上游）
+    L01  头部六项字段齐全且取值合法，Spec 编号与目录名一致（类型 / Status / 上游）
     L02  第 1–7 节标题齐全
     L03  R 编号连续、不重复、不超过 12 条
     L04  每条 R 有「反例」与「可观察证据」，范畴取值合法
@@ -60,6 +60,8 @@ TOTAL_RULES = 10
 STANDARDS_ID = r'[A-Z][A-Z0-9]{1,5}-\d+'
 
 BASE_HEAD_FIELDS = ('Spec', '类型', '上游', '附带交付', 'Status', '版本')
+SPEC_ID_SHAPE = re.compile(r'^p\d{2}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*$')
+VERSION_SHAPE = re.compile(r'^v\d+$')
 HEAD_STATUS = ('draft', 'approved', 'stale')
 MATRIX_STATUS = ('已覆盖', '不适用', '已推翻并说明')
 TOUCH_STATUS = ('无冲突', '冲突', '不涉及')
@@ -85,8 +87,6 @@ _R_MARK = re.compile(r'^-\s*\[[ xX]\]\s*\*\*R(\d+)\*\*', re.MULTILINE)
 _PENDING_ITEM = re.compile(r'^\d+\.\s+', re.MULTILINE)
 _PENDING_DIM = re.compile(r'维度[：:]\s*`?([A-Z]\d)')
 _SCOPE_TAG = re.compile(r'\*\*范畴\*\*[：:]\s*([a-z]+)')
-_APPROVAL_TAG = re.compile(r'^spec/(p\d{2}-\d{3})/approved-(v\d+)$')
-_SPEC_PREFIX = re.compile(r'^(p\d{2}-\d{3})-')
 _COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 
 
@@ -198,6 +198,14 @@ class Report:
 # ─── spec.md：L01–L07 ────────────────────────────────────────────────────────
 
 
+def check_spec_path(rep: Report, spec_dir: str, text: str) -> None:
+    """L01 Spec 头字段必须与所在目录名一致。"""
+    expected = os.path.basename(os.path.normpath(spec_dir))
+    actual = header_fields(text).get('Spec', '')
+    if actual != expected:
+        rep.fail('L01', 'Spec 字段「%s」必须与目录名「%s」一致' % (actual, expected))
+
+
 def check_spec(rep: Report, text: str) -> None:
     """头部、七节结构、R 条目、不做清单、第 7 节、附带交付。"""
     head = header_fields(text)
@@ -224,37 +232,20 @@ def check_head(rep: Report, head: Dict[str, str]) -> None:
     spec_id = head.get('Spec', '')
     status = head.get('Status', '')
     version = head.get('版本', '')
-    if 'Approved' in head:
-        rep.fail('L01', 'spec.md 头部不得使用 Approved；请用 Approved-Tag')
-    if 'Approved-Tag' not in head:
-        rep.fail('L01', 'spec.md 头部缺字段「Approved-Tag」')
-    else:
-        _check_tag_approval(rep, spec_id, version, status, head.get('Approved-Tag', ''))
+    upstream = head.get('上游', '—')
+    if not SPEC_ID_SHAPE.fullmatch(spec_id):
+        rep.fail('L01', 'Spec 必须形如 pNN-NNN-<小写英文短横线 slug>，实际「%s」' % spec_id)
+    if not VERSION_SHAPE.fullmatch(version):
+        rep.fail('L01', '版本必须形如 vN，实际「%s」' % version)
+    if 'Approved' in head or 'Approved-Tag' in head:
+        rep.fail('L01', 'spec.md 头部已移除批准凭据字段，请删除旧字段；批准只以用户明确确认记录在 Status')
     if status not in HEAD_STATUS:
         rep.fail('L01', 'Status 必须是 draft / approved / stale，实际「%s」' % status)
-    if rep.spec_type in ('extend', 'fix') and head.get('上游', '—') == '—':
+    if upstream != '—' and not SPEC_ID_SHAPE.fullmatch(upstream):
+        rep.fail('L01', '上游必须是有效 spec 编号或「—」，实际「%s」' % upstream)
+    if rep.spec_type in ('extend', 'fix') and upstream == '—':
         rep.fail('L01', '%s 型必须填写上游 spec 编号' % rep.spec_type)
     rep.ok('L01')
-
-
-def _check_tag_approval(rep: Report, spec_id: str, version: str, status: str, tag: str) -> None:
-    """Approved-Tag 必须匹配 spec 前缀与版本。"""
-    if status != 'approved':
-        if status in HEAD_STATUS and tag != '—':
-            rep.fail('L01', 'Status 不是 approved 时 Approved-Tag 必须为「—」，实际「%s」' % tag)
-        return
-    match = _APPROVAL_TAG.fullmatch(tag)
-    if match is None:
-        rep.fail('L01', 'Status 为 approved 时 Approved-Tag 必须是 spec/pNN-NNN/approved-vN，实际「%s」' % tag)
-        return
-    prefix = _SPEC_PREFIX.match(spec_id)
-    if prefix is None:
-        rep.fail('L01', 'Spec 必须形如 pNN-NNN-<slug>，实际「%s」' % spec_id)
-        return
-    if match.group(1) != prefix.group(1):
-        rep.fail('L01', 'Approved-Tag 的 spec 前缀「%s」与 Spec「%s」不一致' % (match.group(1), spec_id))
-    if match.group(2) != version:
-        rep.fail('L01', 'Approved-Tag 的版本「%s」与 版本「%s」不一致' % (match.group(2), version))
 
 
 def check_rs(rep: Report, section: str) -> None:
@@ -529,7 +520,9 @@ def main(argv=None) -> int:
         return 2
 
     rep = Report()
-    check_spec(rep, _read(spec_path))
+    spec_text = _read(spec_path)
+    check_spec(rep, spec_text)
+    check_spec_path(rep, args.spec_dir, spec_text)
     check_grill(rep, _read(grill_path))
     return rep.report(args.spec_dir)
 
