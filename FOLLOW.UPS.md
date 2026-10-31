@@ -7,3 +7,4 @@
 | ID | 状态 | 事项 | 来源 spec | 触发条件 | 完成标准 |
 |---|---|---|---|---|---|
 | FUP-001 | 待办 | 补齐 FSD-11 严格分析器配置，并按该规范完成格式、分析和测试验证 | [p00-001 grill.md：Q12](specs/p00-001-schema-tables-page/grill.md) | 下一份需要新增或修改 Dart 代码的 spec，或专门处理分析器配置的 spec，启动 `sdd-grill` 时检查并决定由该 spec 承接还是单独建 spec | `analysis_options.yaml` 包含 FSD-11 要求的严格选项与 lint 规则；`dart format`、`flutter analyze`、`flutter test` 均通过 |
+| FUP-002 | 进行中 | 建立 UI 规范（组件库、布局密度、间距与字号），并据此修订 `coding.md` 的 FSD-12 依赖白名单 | [p00-003 grill.md：Q2](specs/p00-003-lightweight-sdd-plan/grill.md) | `p00-001-schema-tables-page` 进入计划阶段前；或任何涉及 UI 组件库 / 布局密度的 spec 启动 `sdd-grill` 时 | `docs/standards/ui.md` 存在并在 `steering.md` 索引登记（已完成，v1）；FSD-12 允许新增的依赖清单包含该组件库或明确排除它（未完成）；`p00-001` 第 6 节的「依赖」决策已随之更新（未完成，按 `覆盖` 机制可先于白名单推进） |

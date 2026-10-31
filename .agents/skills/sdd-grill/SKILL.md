@@ -60,7 +60,7 @@ sdd-review  →  证据与结论
 
 - 一句需求描述（可以是口语、可以不准）
 - 相关代码路径或上游 spec 编号（不确定就先查）
-- 项目信息与约定：`project.md`（项目本身）、`steering.md`（知识索引；按索引加载相关规范、设计与专题）
+- `steering.md`（知识索引；按索引加载相关规范、设计与专题）
 - 已有 `spec.md`、`grill.md`（同领域的历史决策）
 - 仓库根目录 `FOLLOW.UPS.md`（未完成的延期事项；启动检查时读取）
 
@@ -102,7 +102,7 @@ sdd-review  →  证据与结论
 
 | 型 | 预算 | 查什么 |
 |---|---|---|
-| 新建 | 8 次工具调用 | 按 `steering.md` 查相关规范与设计；相似能力怎么做的、有没有可复用的；`project.md` 的约束；本 spec 会碰到的配置文件 |
+| 新建 | 8 次工具调用 | 按 `steering.md` 查相关规范与设计；相似能力怎么做的、有没有可复用的；本次会碰到的配置文件 |
 | 增量 | 12 次工具调用 | 上游 spec 全文；相关代码与测试；上游的"不做"清单 |
 | 修正 | 8 次工具调用 | 当前实现；覆盖该行为的测试；谁在依赖现状（夹具、文档、UI 入口） |
 
@@ -261,7 +261,7 @@ python .agents/skills/sdd-grill/tools/sdd_lint.py specs/pNN-NNN-<slug>
 ## 阶段 4：组装
 
 1. 用 [templates/spec.md](templates/spec.md) 写 `spec.md`，用 [templates/grill.md](templates/grill.md) 写决策日志。
-2. 路径约定：`specs/pNN-NNN-<英文短横线slug>/spec.md`。`pNN` 是两位阶段号（当前阶段见 `project.md`），`NNN` 是该阶段内三位序号，从 `001` 起；新 spec 取当前阶段最大编号 +1。决策日志同目录 `grill.md`。
+2. 路径约定：`specs/pNN-NNN-<英文短横线slug>/spec.md`。`pNN` 是两位阶段号（取 `specs/` 下现有目录中最大的阶段号），`NNN` 是该阶段内三位序号，从 `001` 起；新 spec 取当前阶段最大编号 +1。决策日志同目录 `grill.md`。
 3. 第 7 节只写真正未决的问题，每个带两个选项与 `维度：<ID>`。
    **好的访谈之后第 7 节应该接近为空**——如果里面还有"这个需求是否完整""是否有风险"，说明访谈没发生。
 4. 跑 `tools/sdd_lint.py`，退出码 0。不过就改，不许解释。
