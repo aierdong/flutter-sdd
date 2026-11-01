@@ -19,6 +19,7 @@
     L09  spec 第 7 节还有待决项时，plan 不得存在
     L10  人读区：第 1 节有「你会看到什么」、无裸维度 ID、拍板项是问句或指向 2.1；
          2.1 的「为什么」一句话、不超字数
+    L11  可见面：第 1 节「覆盖核对」表覆盖 spec 每条 R，落点引文能在「你会看到什么」里逐字找到
 
 只校验可判定的形状。方案好不好、任务拆得对不对，脚本给不出。
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
@@ -77,11 +78,29 @@ _CLAUSE_ID = re.compile(r'(?:UI|FSD)-\d+')
 _CLAUSE_RANGE = re.compile(r'(UI|FSD)-(\d+)\s*[–—~-]\s*(?:UI|FSD)?-?(\d+)')
 
 # 2.2 引用被覆盖条款时表示"只沿用其中一部分"的词。写了它，读者才看得出边界在哪。
-QUALIFIERS = ('仅', '只', '除', '其余', '以外', '之外')
+QUALIFIERS = ('仅', '只', '其余', '以外', '之外')
+
+# 「除」不能按单字匹配：「不排除手写源码」「删除临时文件」里都有它，
+# 会把没限定的写法判成合法。要求成对出现。
+QUALIFIER_PATTERNS = (re.compile(r'除[^。；]{0,24}(?:外|之外)'),)
 
 # 「需要你拍板」下的每一项，要么是问句，要么指向 2.1。
 # 写成「确认……。」的结论句时，人只有"同意"一个动作，闸门退化成确认框。
 PITCH_POINTER = '见 2.1'
+
+# 第 1 节末尾的「覆盖核对」表：spec 每条 R 落到「你会看到什么」的哪一句。
+# 它和第 5 节的 `R → 验证` 同构：一个核"怎么做得到"，一个核"人看不看得见"。
+# 只核存在性与引文可查；引文和 R 说的是不是一回事，脚本判不了。
+_SEEN_HEAD = '覆盖核对'
+_SEEN_TABLE = re.compile(r'\*\*%s\*\*[^\n]*\n(?:[ \t]*\n)*((?:[ \t]*\|[^\n]*\n)+)' % _SEEN_HEAD)
+_VISIBLE_PARA = re.compile(r'\*\*你会看到什么\*\*\s*[：:]?\s*(.+?)(?:\n[ \t]*\n|\n[ \t]*\*\*|\Z)', re.DOTALL)
+
+# 落点引文：太短指不到具体画面，太长说明它是整段复述，人读核对表反而更累。
+SEEN_QUOTE_MIN = 6
+SEEN_QUOTE_MAX = 20
+
+# 标「无」的落点必须给出可核对的指向（「无 —— 见「代价」段」），否则等同于没写。
+NO_SEEN_MARK = '无'
 
 
 def clause_ids(text: str) -> List[str]:
@@ -97,7 +116,7 @@ def clause_ids(text: str) -> List[str]:
     out.extend(_CLAUSE_ID.findall(text))
     return list(dict.fromkeys(out))
 
-TOTAL_RULES = 10
+TOTAL_RULES = 11
 
 SPEC_ID_SHAPE = r'p\d{2}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*'
 _HEAD_SPEC = re.compile(
@@ -112,6 +131,9 @@ _T_REF = re.compile(r'T(\d+)')
 _MD_PATH = re.compile(r'[A-Za-z0-9_./-]+\.md')
 _COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 _SEP_CELL = re.compile(r'^:?-{2,}:?$')
+# Markdown 链接的尖括号目标：`[文本](<../../docs/x.md>)`。
+# 判占位符前要先摘掉，否则一行链接会被当成模板里的 `<约束原文>`，整行跳过校验。
+_LINK_DEST = re.compile(r'\]\(<[^>]*>\)')
 _ROW2 = re.compile(r'^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*$')
 
 
@@ -326,8 +348,11 @@ def check_structure(rep: Report, text: str, sections: Dict[int, str]) -> None:
 
 
 def check_summary(rep: Report, section: str) -> None:
-    """L03 方案摘要：非空、不超行、有拍板栏。"""
-    lines = body_lines(section)
+    """L03 方案摘要：非空、不超行、有拍板栏。
+
+    30 行算的是"给人 2 分钟读完"的量，「覆盖核对」表是自检产物，不计入。
+    """
+    lines = body_lines(_SEEN_TABLE.sub('', section))
     if not lines:
         rep.fail('L03', '第 1 节方案摘要是空的')
         return
@@ -360,8 +385,13 @@ def check_constraints(rep: Report, section: str, plan_dir: str) -> None:
 
 
 def _is_placeholder(text: str) -> bool:
-    """模板占位行（含 <...>）不参与内容校验，否则模板复制过来就过不了闸门。"""
-    return '<' in text and '>' in text
+    """模板占位行（含 <...>）不参与内容校验，否则模板复制过来就过不了闸门。
+
+    先摘掉 Markdown 链接的尖括号目标：`[规范](<../../docs/x.md>)` 是正常引用，
+    不是占位符；不摘的话，整行会被静默跳过——路径写错也不会有人发现。
+    """
+    cleaned = _LINK_DEST.sub('](link)', text)
+    return '<' in cleaned and '>' in cleaned
 
 
 def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> set:
@@ -413,16 +443,56 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> se
     return overridden
 
 
+def _is_qualified(text: str) -> bool:
+    """这一条有没有写明"只沿用哪一部分"。"""
+    if any(word in text for word in QUALIFIERS):
+        return True
+    return any(pattern.search(text) is not None for pattern in QUALIFIER_PATTERNS)
+
+
+def _path_tail(rel: str) -> str:
+    """去掉开头的 `../` 再比，`docs/x.md` 与 `../../docs/x.md` 算同一份。"""
+    parts = os.path.normpath(rel).split(os.sep)
+    while parts and parts[0] == '..':
+        parts.pop(0)
+    return os.sep.join(parts)
+
+
+def _follow_items(section: str) -> List[str]:
+    """2.2 的条目：`- ` 开头的一行，或表格的数据行（表头与分隔线不算）。
+
+    两种写法都得读。只认 `- ` 时，把内容改写成一张表就能整节跳过校验——
+    路径存不存在、有没有限定词，全都不再有人看。
+    """
+    items: List[str] = []
+    in_table = False
+    for raw in _COMMENT.sub('', section).split('\n'):
+        line = raw.strip()
+        if not line:
+            in_table = False
+            continue
+        if line.startswith('- '):
+            items.append(line)
+            in_table = False
+            continue
+        if line.startswith('|'):
+            if not in_table:
+                in_table = True        # 第一行是表头，跳过
+                continue
+            cells = [cell.strip() for cell in line.strip('|').split('|')]
+            if all(_SEP_CELL.match(cell) for cell in cells if cell):
+                continue               # 分隔线 `|---|---|`
+            items.append('，'.join(cell for cell in cells if cell))
+            continue
+        in_table = False
+    return items
+
+
 def _check_follow(
     rep: Report, section: str, repo_root: str, plan_dir: str, overridden: set
 ) -> None:
     """2.2：每条一个主题，出处必须存在。人可以跳读，但 Agent 得找得到。"""
-    items = [
-        line.strip()
-        for line in _COMMENT.sub('', section).split('\n')
-        if line.strip().startswith('- ')
-    ]
-    real = [item for item in items if not _is_placeholder(item)]
+    real = [item for item in _follow_items(section) if not _is_placeholder(item)]
     if not real:
         rep.fail('L04', '第 2.2 节没有列出任何既有规范——预研没做，或者约束被塞回了 2.1')
         return
@@ -430,7 +500,7 @@ def _check_follow(
         # 同一条款不能既在 2.1 被覆盖、又在 2.2 被整体引用：读者对不上账，
         # Agent 也会按 2.2 把被覆盖的部分做回去。
         for clause in clause_ids(item):
-            if clause in overridden and not any(word in item for word in QUALIFIERS):
+            if clause in overridden and not _is_qualified(item):
                 rep.fail(
                     'L04',
                     '第 2.2 节第 %d 条整体引用了 %s，而 2.1 已覆盖它的一部分——'
@@ -445,7 +515,12 @@ def _check_follow(
                 % (number, item[:30]),
             )
             continue
+        seen_paths = set()
         for rel in paths:
+            tail = _path_tail(rel)
+            if tail in seen_paths:
+                continue          # `[docs/x.md](<../../docs/x.md>)` 指向同一份文件，只报一次
+            seen_paths.add(tail)
             _check_ref(rep, '第 2.2 节第 %d 条' % number, rel, repo_root, plan_dir)
 
 
@@ -611,6 +686,90 @@ def check_human(rep: Report, sections: Dict[int, str]) -> None:
                 '第 2.1 节第 %d 行的「为什么」用分号串了两件事——拆成两行，一个决定一行' % number,
             )
     rep.ok('L10')
+
+
+# ─── plan.md：L11 ────────────────────────────────────────────────────────────
+
+
+def check_visible_map(rep: Report, sections: Dict[int, str]) -> None:
+    """L11 每条 R 在第 1 节都有落点。
+
+    这条闸门存在的理由：第 1 节是对照 spec 第 2 节那句摘要写的，而验收标准在第 4 节的 R
+    里——两者信息量差一截。R9「滚动不截断」、R10「点击行无选中态」这类要求整条落不进
+    「你会看到什么」时，人评审看到的画面只有七成验收面，而 lint 照样 PASS。
+
+    机械部分只核存在性：R 编号与 spec 对得上、引文能在段落里逐字找到。
+    引文是不是同一件事，脚本判不了——那是阶段 6 agent 对证的事，见 rules/crosscheck.md。
+    """
+    section = _COMMENT.sub('', sections.get(1, ''))
+    block = _SEEN_TABLE.search(section)
+    if block is None:
+        rep.fail(
+            'L11',
+            '第 1 节缺「**覆盖核对**」表——spec 每条 R 都要指出落到「你会看到什么」的哪一句。'
+            '没有这张表，漏掉的 R 在人评审时不会显形',
+        )
+        return
+    para = _VISIBLE_PARA.search(_SEEN_TABLE.sub('', section))
+    if para is None or not para.group(1).strip():
+        rep.fail('L11', '第 1 节找不到「你会看到什么」的内容，覆盖核对没有可对照的落点')
+        return
+    visible = para.group(1)
+
+    rows = grid_rows(block.group(1))
+    if not rows:
+        rep.fail('L11', '「覆盖核对」表没有数据行')
+        return
+    seen: Dict[str, int] = {}
+    for number, cells in enumerate(rows, 1):
+        if len(cells) < 2:
+            rep.fail('L11', '覆盖核对第 %d 行只有 %d 格，应为 R / 落点 两格' % (number, len(cells)))
+            continue
+        rid = clean_cell(cells[0])
+        if not re.fullmatch(r'R\d+', rid):
+            rep.fail('L11', '覆盖核对第 %d 行首格必须是 R 编号，实际「%s」' % (number, rid[:12]))
+            continue
+        where = cells[1].strip()
+        if _is_placeholder(where):
+            continue  # 模板占位行；下面的 R 集合核对会报"没有落点"，那才是该说的话
+        seen[rid] = seen.get(rid, 0) + 1
+        if where.startswith(NO_SEEN_MARK):
+            if len(where) < 8 or '见' not in where:
+                rep.fail(
+                    'L11',
+                    '%s 标了「无」却没说在那一段交代——写「无 —— 见「代价」段」这种可以点过去核对的指向'
+                    % rid,
+                )
+            continue
+        quote = where.strip('「」“”"').strip()
+        if len(quote) < SEEN_QUOTE_MIN:
+            rep.fail('L11', '%s 的落点「%s」不足 %d 字，指不到具体画面' % (rid, quote, SEEN_QUOTE_MIN))
+        elif len(quote) > SEEN_QUOTE_MAX:
+            rep.fail(
+                'L11',
+                '%s 的落点有 %d 字，超过 %d——照抄其中一句就够，整段复述让核对变重'
+                % (rid, len(quote), SEEN_QUOTE_MAX),
+            )
+        elif quote not in visible:
+            rep.fail(
+                'L11',
+                '%s 的落点「%s」在「你会看到什么」里找不到——落点要逐字照抄，改写后核对就成了空话'
+                % (rid, quote),
+            )
+
+    for rid in rep.spec_rs:
+        if rid not in seen:
+            rep.fail(
+                'L11',
+                'spec 的 %s 没有落点——第 1 节没有一句写到它，人读到的画面里这条验收要求不存在'
+                % rid,
+            )
+        elif seen[rid] > 1:
+            rep.fail('L11', '%s 在覆盖核对里出现 %d 次，每条 R 只能有一个落点' % (rid, seen[rid]))
+    for rid in seen:
+        if rid not in rep.spec_rs:
+            rep.fail('L11', '覆盖核对列了 spec 里不存在的 %s' % rid)
+    rep.ok('L11')
 
 
 # ─── plan.md：L05–L06、L08–L09 ───────────────────────────────────────────────
@@ -788,6 +947,7 @@ def main(argv=None) -> int:
     check_summary(rep, sections.get(1, ''))
     check_constraints(rep, sections.get(2, ''), args.spec_dir)
     check_human(rep, sections)
+    check_visible_map(rep, sections)
     check_blocking(rep, sections)
     check_spec_pending(rep, spec_text)
     check_vague(rep, plan_text)
