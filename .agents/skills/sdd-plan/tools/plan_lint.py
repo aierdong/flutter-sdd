@@ -9,14 +9,16 @@
     L01  头部两项齐全、无版本控制字段；Spec 可解析且与目录名一致；spec 版本与状态对得上 plan 的声明
     L02  第 1–6 节结构；Status=draft 时第 3–6 节必须为空（闸门 A 未过）
     L03  方案摘要非空、不超过 30 行、有「需要你拍板」或「无需你拍板」
-    L04  第 2 节两张表：2.1 需要你同意（三格、去向合法、覆盖写明条款）、2.2 我自己照做（每条有真实出处）
+    L04  第 2 节两张表：2.1 需要你同意（三格、去向合法、覆盖写明条款）、2.2 我自己照做（每条有真实出处；
+         引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
     L05  任务：编号连续、四行齐全、验证可执行
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态：有「回 spec」「先补约定」时不得 approved；approved 时设计与风险非空，
          且「覆盖」必须对应一条带失效条件的决策
     L09  spec 第 7 节还有待决项时，plan 不得存在
-    L10  人读区：第 1 节有「你会看到什么」、无裸维度 ID；2.1 的「为什么」一句话、不超字数
+    L10  人读区：第 1 节有「你会看到什么」、无裸维度 ID、拍板项是问句或指向 2.1；
+         2.1 的「为什么」一句话、不超字数
 
 只校验可判定的形状。方案好不好、任务拆得对不对，脚本给不出。
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
@@ -66,6 +68,34 @@ WHY_MAX_CHARS = 40
 
 # 「什么时候回到标准」里不算可判断的说法。
 VAGUE_DECAY = ('', '—', '-', '暂不', '永不', '长期', '以后再说', '看情况')
+
+# 条款 ID。2.1 声明覆盖过的条款，2.2 不得再整体引用它：
+# 「覆盖 FSD-11 的分析器配置」与「FSD-11 照做三条命令」同时成立时，读者对不上账。
+_CLAUSE_ID = re.compile(r'(?:UI|FSD)-\d+')
+
+# `UI-02–UI-05` 这种区间引用会把中间的条款藏起来，展开后再比对。
+_CLAUSE_RANGE = re.compile(r'(UI|FSD)-(\d+)\s*[–—~-]\s*(?:UI|FSD)?-?(\d+)')
+
+# 2.2 引用被覆盖条款时表示"只沿用其中一部分"的词。写了它，读者才看得出边界在哪。
+QUALIFIERS = ('仅', '只', '除', '其余', '以外', '之外')
+
+# 「需要你拍板」下的每一项，要么是问句，要么指向 2.1。
+# 写成「确认……。」的结论句时，人只有"同意"一个动作，闸门退化成确认框。
+PITCH_POINTER = '见 2.1'
+
+
+def clause_ids(text: str) -> List[str]:
+    """取出条款 ID，区间展开成逐条。
+
+    `UI-02–UI-05` 里没有 `UI-03` 这五个字符，但语义上包含它。
+    不展开的话，把被覆盖的条款夹在区间中间就能绕过交叉核对。
+    """
+    out: List[str] = []
+    for prefix, start, end in _CLAUSE_RANGE.findall(text):
+        low, high = sorted((int(start), int(end)))
+        out.extend('%s-%02d' % (prefix, number) for number in range(low, high + 1))
+    out.extend(_CLAUSE_ID.findall(text))
+    return list(dict.fromkeys(out))
 
 TOTAL_RULES = 10
 
@@ -324,8 +354,8 @@ def check_constraints(rep: Report, section: str, plan_dir: str) -> None:
     if agree is None or follow is None:
         return
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(plan_dir)))
-    _check_agree(rep, agree, repo_root, plan_dir)
-    _check_follow(rep, follow, repo_root, plan_dir)
+    overridden = _check_agree(rep, agree, repo_root, plan_dir)
+    _check_follow(rep, follow, repo_root, plan_dir, overridden)
     rep.ok('L04')
 
 
@@ -334,8 +364,12 @@ def _is_placeholder(text: str) -> bool:
     return '<' in text and '>' in text
 
 
-def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> None:
-    """2.1：三格；首格标去向；覆盖必须写明被覆盖的条款，失效条件可判断。"""
+def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> set:
+    """2.1：三格；首格标去向；覆盖必须写明被覆盖的条款，失效条件可判断。
+
+    返回被覆盖的条款 ID 集合，交给 2.2 做交叉核对。
+    """
+    overridden = set()
     rows = grid_rows(section)
     for number, cells in enumerate(rows, 1):
         if _is_placeholder('|'.join(cells)):
@@ -367,6 +401,7 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> No
             rep.targets.append(target)
             if target == '覆盖':
                 _check_override(rep, number, what)
+                overridden.update(clause_ids(what))
         for rel in _MD_PATH.findall(what):
             _check_ref(rep, '第 2.1 节第 %d 行' % number, rel, repo_root, plan_dir)
         if decay in VAGUE_DECAY:
@@ -375,9 +410,12 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> No
                 '第 2.1 节第 %d 行的「什么时候回到标准」不可判断（「%s」）——写清什么条件下回到通用规范，'
                 '例如"下个需要同类控件的 spec"' % (number, decay),
             )
+    return overridden
 
 
-def _check_follow(rep: Report, section: str, repo_root: str, plan_dir: str) -> None:
+def _check_follow(
+    rep: Report, section: str, repo_root: str, plan_dir: str, overridden: set
+) -> None:
     """2.2：每条一个主题，出处必须存在。人可以跳读，但 Agent 得找得到。"""
     items = [
         line.strip()
@@ -389,6 +427,16 @@ def _check_follow(rep: Report, section: str, repo_root: str, plan_dir: str) -> N
         rep.fail('L04', '第 2.2 节没有列出任何既有规范——预研没做，或者约束被塞回了 2.1')
         return
     for number, item in enumerate(real, 1):
+        # 同一条款不能既在 2.1 被覆盖、又在 2.2 被整体引用：读者对不上账，
+        # Agent 也会按 2.2 把被覆盖的部分做回去。
+        for clause in clause_ids(item):
+            if clause in overridden and not any(word in item for word in QUALIFIERS):
+                rep.fail(
+                    'L04',
+                    '第 2.2 节第 %d 条整体引用了 %s，而 2.1 已覆盖它的一部分——'
+                    '写明只沿用哪一部分（形如「仅三条交付命令」）或「除…外」，'
+                    '否则这条到底还生不生效看不出来' % (number, clause),
+                )
         paths = _MD_PATH.findall(item)
         if not paths:
             rep.fail(
@@ -471,6 +519,36 @@ def _strip_dimension_labels(text: str) -> str:
     return _DIMENSION_LABEL.sub('', text)
 
 
+def _pitch_items(summary: str) -> List[str]:
+    """取「需要你拍板」下面的编号项，含续行，遇到下一个粗体段落为止。"""
+    lines = summary.split('\n')
+    start = next((index for index, line in enumerate(lines) if '需要你拍板' in line), None)
+    if start is None:
+        return []
+    items: List[str] = []
+    current: Optional[List[str]] = None
+    for line in lines[start + 1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('**'):
+            break
+        if re.match(r'^\d+\.\s', stripped):
+            if current is not None:
+                items.append(' '.join(current))
+            current = [stripped]
+        elif current is not None:
+            current.append(stripped)
+    if current is not None:
+        items.append(' '.join(current))
+    return items
+
+
+def _is_pitch_question(item: str) -> bool:
+    """问句，或指向 2.1 的指针，都算给人留了动作。"""
+    return '？' in item or '?' in item or PITCH_POINTER in item
+
+
 def check_human(rep: Report, sections: Dict[int, str]) -> None:
     """L10 人读区：第 1 节是人话，2.1 每条一个决定。
 
@@ -501,6 +579,22 @@ def check_human(rep: Report, sections: Dict[int, str]) -> None:
             '第 1 节说「无需你拍板」，但 2.1 列了 %d 条要你同意的事——'
             '人看到"无需拍板"就会跳过，那几条等于没写' % len(real),
         )
+    if '需要你拍板' in summary:
+        items = _pitch_items(summary)
+        if not items and PITCH_POINTER not in summary:
+            rep.fail(
+                'L10',
+                '第 1 节写了「需要你拍板」却没列问题，也没指向 2.1——'
+                '要么写成问题，要么写「需要你拍板：见 2.1 …」，要么写「无需你拍板」',
+            )
+        for number, item in enumerate(items, 1):
+            if not _is_pitch_question(item):
+                rep.fail(
+                    'L10',
+                    '第 1 节拍板第 %d 项是结论不是问题（「%s」）——结论句只给人"同意"一个动作，'
+                    '闸门就成了确认框；要么给出两个可选动作，要么直接写「需要你拍板：见 2.1 …」，'
+                    '不要换一套措辞把 2.1 再复述一遍' % (number, item[:28]),
+                )
     for number, cells in enumerate(rows, 1):
         if _is_placeholder('|'.join(cells)) or len(cells) < 2:
             continue
