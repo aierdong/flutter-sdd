@@ -9,13 +9,14 @@
     L01  头部两项齐全、无版本控制字段；Spec 可解析且与目录名一致；spec 版本与状态对得上 plan 的声明
     L02  第 1–6 节结构；Status=draft 时第 3–6 节必须为空（闸门 A 未过）
     L03  方案摘要非空、不超过 30 行、有「需要你拍板」或「无需你拍板」
-    L04  约束表：非空、四格、去向合法、来源里的路径真实存在；去向为「覆盖」时写明覆盖了哪一条
+    L04  第 2 节两张表：2.1 需要你同意（三格、去向合法、覆盖写明条款）、2.2 我自己照做（每条有真实出处）
     L05  任务：编号连续、四行齐全、验证可执行
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态：有「回 spec」「先补约定」时不得 approved；approved 时设计与风险非空，
          且「覆盖」必须对应一条带失效条件的决策
     L09  spec 第 7 节还有待决项时，plan 不得存在
+    L10  人读区：第 1 节有「你会看到什么」、无裸维度 ID；2.1 的「为什么」一句话、不超字数
 
 只校验可判定的形状。方案好不好、任务拆得对不对，脚本给不出。
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
@@ -53,13 +54,20 @@ TASK_FIELDS = ('改动', '验证', '覆盖', '依赖')
 
 # 约束的去向。`覆盖` 是正常做法，但必须留痕：写明被覆盖的条款，并在决策表里给出失效条件。
 # 后两个是阻断态：出现时这份 plan 不能进 approved。
+# 第 2 节拆两张表后，这些去向只出现在 2.1（人需要同意的那些）；2.2 的每一行隐含 `既有`。
 ALLOWED_TARGETS = ('既有', '覆盖', '回 spec', '先补约定', '仅本次')
 BLOCKING_TARGETS = ('回 spec', '先补约定')
 
 # 空洞词：出现即视为没写完。
 VAGUE_WORDS = ('TBD', 'TODO', '待定', '稍后', '视情况', '酌情')
 
-TOTAL_RULES = 9
+# 第 2.1 节「为什么」一格的字符上限：一句一事，写不下说明它其实是两条约束。
+WHY_MAX_CHARS = 40
+
+# 「什么时候回到标准」里不算可判断的说法。
+VAGUE_DECAY = ('', '—', '-', '暂不', '永不', '长期', '以后再说', '看情况')
+
+TOTAL_RULES = 10
 
 SPEC_ID_SHAPE = r'p\d{2}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*'
 _HEAD_SPEC = re.compile(
@@ -302,45 +310,109 @@ def check_summary(rep: Report, section: str) -> None:
 
 
 def check_constraints(rep: Report, section: str, plan_dir: str) -> None:
-    """L04 约束表：非空、四格、去向合法、来源路径存在。"""
-    rows = grid_rows(section)
-    if not rows:
-        rep.fail('L04', '第 2 节约束表没有数据行——没有约束的 plan 说明预研没做')
+    """L04 第 2 节两张表：2.1 给人（一条一个决定），2.2 给 Agent（既有规范，按主题合并）。
+
+    合成一张表是有代价的：既有规范会把"这次真的要人点头的例外"淹掉，
+    人读完十几行施工要求就开始整节跳过，闸门等于没设。所以分开写，也分开校验。
+    """
+    subs = split_subsections(section)
+    agree, follow = subs.get('2.1'), subs.get('2.2')
+    if agree is None:
+        rep.fail('L04', '第 2 节缺「### 2.1 需要你同意」——人只需要读这一节，它必须单独存在')
+    if follow is None:
+        rep.fail('L04', '第 2 节缺「### 2.2 我自己照做」——既有规范不要和人要点头的例外挤在一张表里')
+    if agree is None or follow is None:
         return
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(plan_dir)))
+    _check_agree(rep, agree, repo_root, plan_dir)
+    _check_follow(rep, follow, repo_root, plan_dir)
+    rep.ok('L04')
+
+
+def _is_placeholder(text: str) -> bool:
+    """模板占位行（含 <...>）不参与内容校验，否则模板复制过来就过不了闸门。"""
+    return '<' in text and '>' in text
+
+
+def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> None:
+    """2.1：三格；首格标去向；覆盖必须写明被覆盖的条款，失效条件可判断。"""
+    rows = grid_rows(section)
     for number, cells in enumerate(rows, 1):
-        if len(cells) != 4:
-            rep.fail('L04', '第 2 节第 %d 行有 %d 格，应为 约束 / 来源 / 影响 / 去向 四格' % (number, len(cells)))
+        if _is_placeholder('|'.join(cells)):
             continue
-        source, target = clean_cell(cells[1]), clean_cell(cells[3])
-        impact = clean_cell(cells[2])
-        if target not in ALLOWED_TARGETS:
+        if len(cells) != 3:
             rep.fail(
                 'L04',
-                '第 2 节第 %d 行去向「%s」不在 %s 内' % (number, target, ' / '.join(ALLOWED_TARGETS)),
+                '第 2.1 节第 %d 行有 %d 格，应为 这次要打破什么 / 为什么 / 什么时候回到标准 三格'
+                % (number, len(cells)),
+            )
+            continue
+        what, decay = clean_cell(cells[0]), clean_cell(cells[2])
+        if not what:
+            rep.fail('L04', '第 2.1 节第 %d 行没写打破的是什么' % number)
+            continue
+        target = next((item for item in ALLOWED_TARGETS if item in what), None)
+        if target is None:
+            rep.fail(
+                'L04',
+                '第 2.1 节第 %d 行没标去向——这里是"需要你同意"的表，每条都要说明属于哪一种：'
+                '覆盖 / 仅本次 / 回 spec / 先补约定' % number,
+            )
+        elif target == '既有':
+            rep.fail(
+                'L04',
+                '第 2.1 节第 %d 行是「既有」——既有规范放 2.2，不要占人的注意力' % number,
             )
         else:
             rep.targets.append(target)
             if target == '覆盖':
-                _check_override(rep, number, impact, repo_root, plan_dir)
-        if not clean_cell(cells[0]):
-            rep.fail('L04', '第 2 节第 %d 行约束为空' % number)
-        for rel in _MD_PATH.findall(source):
+                _check_override(rep, number, what, repo_root, plan_dir)
+        if decay in VAGUE_DECAY:
+            rep.fail(
+                'L04',
+                '第 2.1 节第 %d 行的「什么时候回到标准」不可判断（「%s」）——写清什么条件下回到通用规范，'
+                '例如"下个需要同类控件的 spec"' % (number, decay),
+            )
+
+
+def _check_follow(rep: Report, section: str, repo_root: str, plan_dir: str) -> None:
+    """2.2：每条一个主题，出处必须存在。人可以跳读，但 Agent 得找得到。"""
+    items = [
+        line.strip()
+        for line in _COMMENT.sub('', section).split('\n')
+        if line.strip().startswith('- ')
+    ]
+    real = [item for item in items if not _is_placeholder(item)]
+    if not real:
+        rep.fail('L04', '第 2.2 节没有列出任何既有规范——预研没做，或者约束被塞回了 2.1')
+        return
+    for number, item in enumerate(real, 1):
+        paths = _MD_PATH.findall(item)
+        if not paths:
+            rep.fail(
+                'L04',
+                '第 2.2 节第 %d 条没写出处（形如 `docs/standards/xxx.md` FSD-01）：%s'
+                % (number, item[:30]),
+            )
+            continue
+        for rel in paths:
             if not _path_exists(repo_root, plan_dir, rel):
-                rep.fail('L04', '第 2 节第 %d 行的来源「%s」不存在——引用了一份不存在的规范' % (number, rel))
-    rep.ok('L04')
+                rep.fail(
+                    'L04',
+                    '第 2.2 节第 %d 条的出处「%s」不存在——引用一份不存在的规范比不写更糟' % (number, rel),
+                )
 
 
-def _check_override(rep: Report, number: int, impact: str, repo_root: str, plan_dir: str) -> None:
-    """去向为 `覆盖` 时，影响格必须写明被覆盖的条款，且该条款真的存在。
+def _check_override(rep: Report, number: int, what: str, repo_root: str, plan_dir: str) -> None:
+    """标了 `覆盖` 的，必须写明覆盖了哪一条，且该条款真的存在。
 
     允许"更具体覆盖更一般"，但覆盖必须是可核对的：写了覆盖谁，谁就得在那儿。
     """
-    hit = re.search(r'覆盖\s*[:：]?\s*(.+)$', impact)
+    hit = re.search(r'覆盖\s*[:：]?\s*(.+)$', what)
     if hit is None:
         rep.fail(
             'L04',
-            '第 2 节第 %d 行标了「覆盖」，但「影响」格没写覆盖了哪一条（形如 `覆盖 docs/standards/ui.md UI-01`）'
+            '第 2.1 节第 %d 行标了「覆盖」，但没写覆盖了哪一条（形如 `覆盖 docs/standards/ui.md UI-01`）'
             % number,
         )
         return
@@ -349,11 +421,11 @@ def _check_override(rep: Report, number: int, impact: str, repo_root: str, plan_
     if not paths and not re.search(r'spec\s*§\s*\d+', target):
         rep.fail(
             'L04',
-            '第 2 节第 %d 行的被覆盖对象「%s」既不是文档路径也不是 `spec §N`' % (number, target[:40]),
+            '第 2.1 节第 %d 行的被覆盖对象「%s」既不是文档路径也不是 `spec §N`' % (number, target[:40]),
         )
     for rel in paths:
         if not _path_exists(repo_root, plan_dir, rel):
-            rep.fail('L04', '第 2 节第 %d 行声明的被覆盖文档「%s」不存在' % (number, rel))
+            rep.fail('L04', '第 2.1 节第 %d 行声明的被覆盖文档「%s」不存在' % (number, rel))
 
 
 def _path_exists(repo_root: str, plan_dir: str, rel: str) -> bool:
@@ -371,6 +443,59 @@ def check_vague(rep: Report, text: str) -> None:
         if word in body:
             rep.fail('L07', '出现空洞词「%s」——要么写清，要么删掉' % word)
     rep.ok('L07')
+
+
+# 第 1 节里只允许以「把结论写出来」的方式引用访谈，不允许用维度 ID 指代内容：
+# 「S6 已选 A」写完，人还是不知道选了哪个；「大小按 1024 换算，最多一位小数」才可判断。
+_DIMENSION_ID = re.compile(r'(?<![A-Za-z0-9_])[SU][1-9](?![0-9A-Za-z_])')
+
+# 「需要你拍板」里允许出现 `维度：S3`，那是标签不是内容；先摘掉再查正文。
+_DIMENSION_LABEL = re.compile(r'维度\s*[:：]\s*`?[SU][1-9]`?')
+
+
+def _strip_dimension_labels(text: str) -> str:
+    return _DIMENSION_LABEL.sub('', text)
+
+
+def check_human(rep: Report, sections: Dict[int, str]) -> None:
+    """L10 人读区：第 1 节是人话，2.1 每条一个决定。
+
+    这条闸门拦的是最确定的三种退化——用 ID 指代内容、一格塞几件事、摘要里没有成品画面。
+    文风本身判不了，剩下的靠阶段 4 的自检与交付时的第一句话。
+    """
+    summary = _COMMENT.sub('', sections.get(1, ''))
+    if '你会看到什么' not in summary:
+        rep.fail(
+            'L10',
+            '第 1 节缺「你会看到什么」——人读完第一段就该知道做成什么样；'
+            '只有结构与术语，人只能靠猜，闸门就是空转',
+        )
+    hit = _DIMENSION_ID.search(_strip_dimension_labels(summary))
+    if hit is not None:
+        rep.fail(
+            'L10',
+            '第 1 节出现裸维度 ID「%s」——把访谈结论本身写出来'
+            '（写「大小按 1024 换算」，不写「S6 已选 A」）；维度 ID 只用在「需要你拍板」里'
+            % hit.group(0),
+        )
+
+    rows = grid_rows(split_subsections(sections.get(2, '')).get('2.1', ''))
+    for number, cells in enumerate(rows, 1):
+        if _is_placeholder('|'.join(cells)) or len(cells) < 2:
+            continue
+        why = clean_cell(cells[1])
+        if len(why) > WHY_MAX_CHARS:
+            rep.fail(
+                'L10',
+                '第 2.1 节第 %d 行的「为什么」有 %d 字，超过 %d——一格只说一件事，超了就是两条约束'
+                % (number, len(why), WHY_MAX_CHARS),
+            )
+        if '；' in why or ';' in why:
+            rep.fail(
+                'L10',
+                '第 2.1 节第 %d 行的「为什么」用分号串了两件事——拆成两行，一个决定一行' % number,
+            )
+    rep.ok('L10')
 
 
 # ─── plan.md：L05–L06、L08–L09 ───────────────────────────────────────────────
@@ -547,6 +672,7 @@ def main(argv=None) -> int:
     check_structure(rep, plan_text, sections)
     check_summary(rep, sections.get(1, ''))
     check_constraints(rep, sections.get(2, ''), args.spec_dir)
+    check_human(rep, sections)
     check_blocking(rep, sections)
     check_spec_pending(rep, spec_text)
     check_vague(rep, plan_text)

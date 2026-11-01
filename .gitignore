@@ -44,7 +44,7 @@ app.*.map.json
 .env.*
 !.env.example
 
-# WorkBuddy local data (skills junction points to .agents/skills)
+# WorkBuddy local data (.workbuddy/skills/* 是指向 .agents/skills/* 的符号链接)
 .workbuddy/
 
 # Python

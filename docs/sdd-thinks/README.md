@@ -23,7 +23,7 @@
 ```text
 sdd-grill   →  spec.md + grill.md   审阅区，人批准
      ↓
-sdd-plan    →  plan.md              执行区，机器自检
+sdd-plan    →  plan.md              第 1–2 节人读（闸门），第 3–6 节机器执行
      ↓
 sdd-impl    →  代码 + 测试 + 证据
      ↓
