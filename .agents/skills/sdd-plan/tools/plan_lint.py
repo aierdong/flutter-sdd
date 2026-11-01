@@ -366,7 +366,9 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> No
         else:
             rep.targets.append(target)
             if target == '覆盖':
-                _check_override(rep, number, what, repo_root, plan_dir)
+                _check_override(rep, number, what)
+        for rel in _MD_PATH.findall(what):
+            _check_ref(rep, '第 2.1 节第 %d 行' % number, rel, repo_root, plan_dir)
         if decay in VAGUE_DECAY:
             rep.fail(
                 'L04',
@@ -396,17 +398,14 @@ def _check_follow(rep: Report, section: str, repo_root: str, plan_dir: str) -> N
             )
             continue
         for rel in paths:
-            if not _path_exists(repo_root, plan_dir, rel):
-                rep.fail(
-                    'L04',
-                    '第 2.2 节第 %d 条的出处「%s」不存在——引用一份不存在的规范比不写更糟' % (number, rel),
-                )
+            _check_ref(rep, '第 2.2 节第 %d 条' % number, rel, repo_root, plan_dir)
 
 
-def _check_override(rep: Report, number: int, what: str, repo_root: str, plan_dir: str) -> None:
-    """标了 `覆盖` 的，必须写明覆盖了哪一条，且该条款真的存在。
+def _check_override(rep: Report, number: int, what: str) -> None:
+    """标了 `覆盖` 的，必须写明覆盖了哪一条。
 
     允许"更具体覆盖更一般"，但覆盖必须是可核对的：写了覆盖谁，谁就得在那儿。
+    路径是否存在由调用方统一查（一行只报一次），这里只管"写没写"。
     """
     hit = re.search(r'覆盖\s*[:：]?\s*(.+)$', what)
     if hit is None:
@@ -417,15 +416,30 @@ def _check_override(rep: Report, number: int, what: str, repo_root: str, plan_di
         )
         return
     target = hit.group(1).strip()
-    paths = _MD_PATH.findall(target)
-    if not paths and not re.search(r'spec\s*§\s*\d+', target):
+    if not _MD_PATH.findall(target) and not re.search(r'spec\s*§\s*\d+', target):
         rep.fail(
             'L04',
             '第 2.1 节第 %d 行的被覆盖对象「%s」既不是文档路径也不是 `spec §N`' % (number, target[:40]),
         )
-    for rel in paths:
-        if not _path_exists(repo_root, plan_dir, rel):
-            rep.fail('L04', '第 2.1 节第 %d 行声明的被覆盖文档「%s」不存在' % (number, rel))
+
+
+def _check_ref(rep: Report, where: str, rel: str, repo_root: str, plan_dir: str) -> None:
+    """出处必须写成仓库相对路径，且真的存在。
+
+    绝对路径在本机能过、换机器或换目录就全断，而且会让路径校验形同虚设
+    （`os.path.join` 遇到绝对路径直接丢弃前缀），所以单独拦一条。
+    """
+    if os.path.isabs(rel):
+        rep.fail(
+            'L04',
+            '%s 用了绝对路径「%s」——换机器、换 clone 目录就断，写成相对路径' % (where, rel),
+        )
+        return
+    if not _path_exists(repo_root, plan_dir, rel):
+        rep.fail(
+            'L04',
+            '%s 的出处「%s」不存在——引用一份不存在的规范比不写更糟' % (where, rel),
+        )
 
 
 def _path_exists(repo_root: str, plan_dir: str, rel: str) -> bool:
@@ -480,6 +494,13 @@ def check_human(rep: Report, sections: Dict[int, str]) -> None:
         )
 
     rows = grid_rows(split_subsections(sections.get(2, '')).get('2.1', ''))
+    real = [cells for cells in rows if not _is_placeholder('|'.join(cells))]
+    if real and '无需你拍板' in summary:
+        rep.fail(
+            'L10',
+            '第 1 节说「无需你拍板」，但 2.1 列了 %d 条要你同意的事——'
+            '人看到"无需拍板"就会跳过，那几条等于没写' % len(real),
+        )
     for number, cells in enumerate(rows, 1):
         if _is_placeholder('|'.join(cells)) or len(cells) < 2:
             continue
