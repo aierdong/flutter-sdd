@@ -11,7 +11,7 @@
     L03  方案摘要非空、不超过 30 行、有「需要你拍板」或「无需你拍板」
     L04  第 2 节两张表：2.1 需要你同意（三格、去向合法、覆盖写明条款）、2.2 我自己照做（每条有真实出处；
          引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
-    L05  任务：编号连续、四行齐全、验证可执行
+    L05  任务：编号连续、四行齐全、验证可执行；依赖只指前面的任务；改动不越 3.3 清单
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态：有「回 spec」「先补约定」时不得 approved；approved 时设计与风险非空，
@@ -140,6 +140,10 @@ _SPEC_R = re.compile(r'^\s*-\s*\[[ xX]\]\s*\*\*R(\d+)\*\*', re.MULTILINE)
 _R_REF = re.compile(r'R(\d+)')
 _T_REF = re.compile(r'T(\d+)')
 _MD_PATH = re.compile(r'[A-Za-z0-9_./-]+\.md')
+
+# 任务「改动」里被反引号包住的源码/测试路径。只认 lib/ 与 test/：
+# 3.3 的 diff 边界也是这两个根，范围外的路径（如 spec 目录的 review.md）另说。
+_CODE_PATH = re.compile(r'`((?:lib|test)/[^`]*)`')
 _COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 _SEP_CELL = re.compile(r'^:?-{2,}:?$')
 # Markdown 链接的尖括号目标：`[文本](<../../docs/x.md>)`。
@@ -786,14 +790,19 @@ def check_visible_map(rep: Report, sections: Dict[int, str]) -> None:
 # ─── plan.md：L05–L06、L08–L09 ───────────────────────────────────────────────
 
 
-def check_tasks(rep: Report, section: str) -> None:
-    """L05 任务编号连续、四行齐全、验证可执行。"""
+def check_tasks(rep: Report, section: str, design: str = '') -> None:
+    """L05 任务编号连续、四行齐全、验证可执行、依赖成链、改动不越 3.3 边界。"""
     blocks = task_blocks(section)
     if not blocks:
         rep.fail('L05', '第 4 节没有任何任务（`- [ ] **T1** ...`）')
         return
+    files = design_files(design)
+    if not files:
+        rep.fail('L05', '第 3.3 节没有影响文件清单——任务改什么无从核对，diff 边界也落不了地')
+    seen: List[int] = []
     for index, (tid, block) in enumerate(blocks, 1):
         rep.task_ids.append(tid)
+        seen.append(tid)
         if tid != index:
             rep.fail('L05', '任务编号不连续：第 %d 条是 T%d' % (index, tid))
         for field in TASK_FIELDS:
@@ -808,7 +817,64 @@ def check_tasks(rep: Report, section: str) -> None:
                 value = hit.group(1)
                 if '手工' not in value and '`' not in value:
                     rep.fail('L05', 'T%d 的验证「%s」既没有命令（反引号）也没写「手工：」' % (tid, value.strip()))
+            elif field == '依赖':
+                _check_deps(rep, tid, hit.group(1), seen)
+            elif field == '改动':
+                _check_change(rep, tid, hit.group(1), files)
     rep.ok('L05')
+
+
+def _check_deps(rep: Report, tid: int, value: str, seen: List[int]) -> None:
+    """依赖必须指向排在它前面的任务。
+
+    只认编号：T4 写「依赖：T5」时，实现时先跑 T5 就没有 T4 的产物，
+    而 lint 如果说不出这句话，计划就只是看起来有序。
+    """
+    refs = [int(match.group(1)) for match in re.finditer(r'T(\d+)', value)]
+    if not refs:
+        rep.fail('L05', 'T%d 的依赖「%s」里没有任务号' % (tid, value.strip()))
+        return
+    for ref in refs:
+        if ref == tid:
+            rep.fail('L05', 'T%d 依赖自己' % tid)
+        elif ref not in seen:
+            rep.fail(
+                'L05',
+                'T%d 依赖 T%d，但 T%d 不存在或排在 T%d 之后——依赖只能指向先做的任务'
+                % (tid, ref, ref, tid),
+            )
+
+
+def _check_change(rep: Report, tid: int, value: str, files: set) -> None:
+    """改动的路径必须在 3.3 清单内。
+
+    3.3 是 `sdd-impl` 的 diff 边界。任务里顺手写一个清单外的文件，
+    lint 不报，实现时就会静默扩张——边界写在表里却不核，等于没有。
+    """
+    if not files:
+        return
+    for path in _CODE_PATH.findall(value):
+        if path in files:
+            continue
+        if path.endswith('/') and any(name.startswith(path) for name in files):
+            continue
+        rep.fail(
+            'L05',
+            'T%d 要改 `%s`，但它不在第 3.3 节的文件清单里——diff 只允许落在清单内' % (tid, path),
+        )
+
+
+def design_files(design: str) -> set:
+    """第 3.3 节影响文件清单里的路径。"""
+    out = set()
+    for cells in grid_rows(split_subsections(design).get('3.3', '')):
+        if not cells:
+            continue
+        name = clean_cell(cells[0]).strip('`').strip()
+        if re.match(r'^(lib|test)/', name) and not _is_placeholder(name):
+            out.add(name)
+    return out
+
 
 
 def check_coverage(rep: Report, section5: str, section4: str) -> None:
@@ -967,7 +1033,7 @@ def main(argv=None) -> int:
         rep.skip('L05', 'Status=draft：任务与覆盖在 design-ok 之后校验')
         rep.skip('L06', 'Status=draft：任务与覆盖在 design-ok 之后校验')
     else:
-        check_tasks(rep, sections.get(4, ''))
+        check_tasks(rep, sections.get(4, ''), sections.get(3, ''))
         check_coverage(rep, sections.get(5, ''), sections.get(4, ''))
 
     return rep.report(args.spec_dir)
