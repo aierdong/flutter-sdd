@@ -88,6 +88,56 @@ class PlanLintTests(unittest.TestCase):
                 text = text.replace("| R1 | 同目录下多出一个 |", "| R1 | 见 2.1 的 1 条。 |")
                 self.assert_rejected(text, "L11")
 
+    def test_visible_quotes_stop_at_any_standalone_heading(self):
+        for heading in ("**怎么做到**", "**实现方式**", "**这样安排的原因**",
+                        "**代价**", "**代价与放弃**", "**其他说明**", "### 补充说明"):
+            with self.subTest(heading=heading):
+                text = self.ready().replace("**怎么做到**", heading)
+                text = text.replace("同目录下多出一个 `report.tsv`", "会生成报告文件")
+                text = text.replace(heading + "：", heading + "：同目录下多出一个。")
+                self.assert_rejected(text, "L11")
+
+    def test_visible_list_emphasis_and_blank_lines_are_legal(self):
+        text = self.ready().replace("- 跑一次导入命令，", "- **运行结果**：跑一次导入命令，")
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def test_visible_continuation_emphasis_is_legal(self):
+        text = self.ready().replace("- 跑一次导入命令，同目录下多出一个", "- 跑一次导入命令，\n  **运行结果**：同目录下多出一个")
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def test_empty_visible_section_does_not_consume_next_heading(self):
+        text = self.ready()
+        start = text.index("- 跑一次导入命令，")
+        end = text.index("**怎么做到**")
+        text = text[:start] + text[end:]
+        text = text.replace("**怎么做到**：", "**实现方式**：同目录下多出一个，第一列是出错的行内容。")
+        self.assert_rejected(text, "L11")
+
+    def test_generic_clause_identifiers_and_ranges(self):
+        cases = (
+            ("REPORT-01 FORM-02", ["REPORT-01", "FORM-02"]),
+            ("UI-98–UI-100", ["UI-98", "UI-99", "UI-100"]),
+            ("REPORT-01–REPORT-03", ["REPORT-01", "REPORT-02", "REPORT-03"]),
+            ("FORM-03–01", ["FORM-01", "FORM-02", "FORM-03"]),
+            ("DATA-ACCESS-1–DATA-ACCESS-3", ["DATA-ACCESS-1", "DATA-ACCESS-2", "DATA-ACCESS-3"]),
+            ("UI-01–FSD-03", ["UI-01", "FSD-03"]),
+        )
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(lint.clause_ids(text), expected)
+
+    def test_generic_override_conflicts_are_rejected(self):
+        for prefix in ("REPORT", "FORM", "DATA-ACCESS", "UI", "FSD"):
+            with self.subTest(prefix=prefix):
+                text = self.ready().replace("FSD-04", prefix + "-02")
+                text = text.replace("FSD-01–FSD-03", prefix + "-01–" + prefix + "-03")
+                self.assert_rejected(text, "L04")
+                qualified = text.replace("三行文件头、需求锚点、镜像测试。", "仅沿用文件头要求。")
+                code, output = self.run_plan(qualified)
+                self.assertEqual(code, 0, output)
+
     def test_missing_risks_in_both_delivery_states(self):
         for state in ("design-ok", "approved"):
             text = self.ready().replace("`design-ok`", "`%s`" % state)

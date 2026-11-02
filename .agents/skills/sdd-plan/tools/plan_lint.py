@@ -77,10 +77,14 @@ VAGUE_DECAY = ('', '—', '-', '暂不', '永不', '长期', '以后再说', '�
 
 # 条款 ID：例如 REPORT-01 表示报告规范的第 1 条，FORM-02 表示表单规范的第 2 条。
 # 2.1 覆盖了某条款的一部分时，2.2 必须说明只沿用哪一部分，不能再整体引用。
-_CLAUSE_ID = re.compile(r'(?:UI|FSD)-\d+')
+_CLAUSE_PREFIX = r'[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*'
+_CLAUSE_ID = re.compile(r'(?<![A-Za-z0-9_-])(?:%s)-\d+(?![A-Za-z0-9_-])' % _CLAUSE_PREFIX)
 
 # `RULE-02–RULE-05` 这种区间引用会把中间的条款藏起来，展开后再比对。
-_CLAUSE_RANGE = re.compile(r'(UI|FSD)-(\d+)\s*[–—~-]\s*(?:UI|FSD)?-?(\d+)')
+_CLAUSE_RANGE = re.compile(
+    r'(?<![A-Za-z0-9_-])(%s)-(\d+)\s*[–—~-]\s*(?:(%s)-)?(\d+)(?![A-Za-z0-9_-])'
+    % (_CLAUSE_PREFIX, _CLAUSE_PREFIX)
+)
 
 # 2.2 引用被覆盖条款时表示"只沿用其中一部分"的词。写了它，读者才看得出边界在哪。
 QUALIFIERS = ('仅', '只', '其余', '以外', '之外')
@@ -103,13 +107,12 @@ _VISIBLE_HEADS = ('用户会看到的变化', '你会看到什么')
 _PITCH_HEADS = ('需要用户决定的事项', '需要你拍板')
 _NO_PITCH_HEADS = ('无需用户决定', '无需你拍板')
 
-# 「用户会看到的变化」到哪里结束：只认模板里那几个小标题，不认空行。
-# 列表项之间允许空行，项内允许折行，不能按空行截断。
-# 未识别的粗体小标题仍算内容，避免误报合法写法。
-_VISIBLE_END_LABELS = ('怎么做到', '为什么这么切', '代价与放弃', '覆盖核对') + _PITCH_HEADS + _NO_PITCH_HEADS
+# 可见变化在下一个独立粗体小标题或 Markdown 标题处结束。
+# 不依赖标题名称，避免「实现方式」「代价」等措辞变化把实现说明算作可见结果。
+# 列表项之间允许空行和项内折行；列表中的粗体强调不算小标题。
 _VISIBLE_PARA = re.compile(
-    r'\*\*(?:%s)\*\*\s*[：:]?\s*(.*?)(?=\n[ \t]*\*\*(?:%s)\*\*|\Z)'
-    % ('|'.join(_VISIBLE_HEADS), '|'.join(_VISIBLE_END_LABELS)),
+    r'\*\*(?:%s)\*\*[ \t]*[：:]?[ \t]*(.*?)(?=\n(?:\*\*[^*\n]+\*\*|#{1,6}[ \t]+)|\Z)'
+    % '|'.join(_VISIBLE_HEADS),
     re.DOTALL,
 )
 
@@ -128,10 +131,17 @@ def clause_ids(text: str) -> List[str]:
     不展开的话，把被覆盖的条款夹在区间中间就能绕过交叉核对。
     """
     out: List[str] = []
-    for prefix, start, end in _CLAUSE_RANGE.findall(text):
+    def expand_range(match: re.Match) -> str:
+        prefix, start, end_prefix, end = match.groups()
+        if end_prefix is not None and end_prefix != prefix:
+            return match.group(0)
         low, high = sorted((int(start), int(end)))
-        out.extend('%s-%02d' % (prefix, number) for number in range(low, high + 1))
-    out.extend(_CLAUSE_ID.findall(text))
+        width = min(len(start), len(end))
+        out.extend('%s-%s' % (prefix, str(number).zfill(width)) for number in range(low, high + 1))
+        return ' '
+
+    remaining = _CLAUSE_RANGE.sub(expand_range, text)
+    out.extend(_CLAUSE_ID.findall(remaining))
     return list(dict.fromkeys(out))
 
 TOTAL_RULES = 11
