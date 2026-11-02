@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""sdd-plan 阶段闸门的机械校验。
+"""检查 sdd-plan 计划的格式和可直接判断的内容。
+
+方案确认（A）：第 1–2 节完成，lint 和按类型要求的独立核查完成后，
+用户明确同意才能写第 3–6 节。fix 可跳独立核查，但要说明理由。
+开工确认（B）：整份计划完成，所有类型都要独立核查、记录并重跑 lint，
+用户明确允许后才能实现。脚本不代替独立核查或用户批准。
 
 用法：
     python3 .agents/skills/sdd-plan/tools/plan_lint.py <spec 目录>
@@ -7,21 +12,21 @@
 校验项：
 
     L01  头部两项齐全、无版本控制字段；Spec 可解析且与目录名一致；spec 版本与状态对得上 plan 的声明
-    L02  第 1–6 节结构；Status=draft 时第 3–6 节必须为空（闸门 A 未过）
-    L03  方案摘要非空、不超过 30 行、有「需要你拍板」或「无需你拍板」
-    L04  第 2 节两张表：2.1 需要你同意（三格、去向合法、覆盖写明条款）、2.2 我自己照做（每条有真实出处；
+    L02  第 1–6 节结构；Status=draft 时第 3–6 节必须为空（方案尚未确认）
+    L03  方案摘要非空、不超过 30 行、有「需要用户决定的事项」或「无需用户决定」
+    L04  第 2 节两张表：2.1 需要用户确认的例外（三格、去向合法、覆盖写明条款）、2.2 Agent 遵循的既有规范（每条有真实出处；
          引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
     L05  任务：编号连续、四行齐全、验证可执行；依赖只指前面的任务；改动不越 3.3 清单
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
-    L08  阻断态：有「回 spec」「先补约定」时不得 approved；approved 时设计与风险非空，
-         且「覆盖」必须对应一条带失效条件的决策
+    L08  阻断态只能 draft；design-ok / approved 时第 3–6 节及设计子节完整，
+         风险表与对证记录存在，且「覆盖」必须对应带失效条件的决策；不判语义通过
     L09  spec 第 7 节还有待决项时，plan 不得存在
-    L10  人读区：第 1 节有「你会看到什么」、无裸维度 ID、拍板项是问句或指向 2.1；
+    L10  人读区：第 1 节有「用户会看到的变化」、无裸维度 ID、拍板项是问句或指向 2.1；
          2.1 的「为什么」一句话、不超字数
-    L11  可见面：第 1 节「覆盖核对」表覆盖 spec 每条 R，落点引文能在「你会看到什么」里逐字找到
+    L11  可见面：第 1 节「覆盖核对」表覆盖 spec 每条 R，落点引文能在「用户会看到的变化」里逐字找到
 
-只校验可判定的形状。方案好不好、任务拆得对不对，脚本给不出。
+只检查格式和能直接判断的内容。方案是否合适、任务拆分是否合理，仍需独立核查。
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
 
 脚本随本 skill 分发，纯标准库、Python 3.8+，不依赖被审项目的语言、框架或构建系统。
@@ -35,7 +40,7 @@ import re
 import sys
 from typing import Dict, List, Optional, Tuple
 
-# ─── 形状常量 ────────────────────────────────────────────────────────────────
+# ─── 规则常量 ────────────────────────────────────────────────────────────────
 #
 # 这些是本 skill 自己的规则，与 ../SKILL.md、../rules/dimensions.md 逐字对应，
 # 改一处必须同步另一处。
@@ -57,7 +62,7 @@ TASK_FIELDS = ('改动', '验证', '覆盖', '依赖')
 
 # 约束的去向。`覆盖` 是正常做法，但必须留痕：写明被覆盖的条款，并在决策表里给出失效条件。
 # 后两个是阻断态：出现时这份 plan 不能进 approved。
-# 第 2 节拆两张表后，这些去向只出现在 2.1（人需要同意的那些）；2.2 的每一行隐含 `既有`。
+# 这些去向只用于 2.1 的待确认事项；2.2 每行都按 `既有` 处理。
 ALLOWED_TARGETS = ('既有', '覆盖', '回 spec', '先补约定', '仅本次')
 BLOCKING_TARGETS = ('回 spec', '先补约定')
 
@@ -70,11 +75,11 @@ WHY_MAX_CHARS = 40
 # 「什么时候回到标准」里不算可判断的说法。
 VAGUE_DECAY = ('', '—', '-', '暂不', '永不', '长期', '以后再说', '看情况')
 
-# 条款 ID。2.1 声明覆盖过的条款，2.2 不得再整体引用它：
-# 「覆盖 FSD-11 的分析器配置」与「FSD-11 照做三条命令」同时成立时，读者对不上账。
+# 条款 ID：例如 REPORT-01 表示报告规范的第 1 条，FORM-02 表示表单规范的第 2 条。
+# 2.1 覆盖了某条款的一部分时，2.2 必须说明只沿用哪一部分，不能再整体引用。
 _CLAUSE_ID = re.compile(r'(?:UI|FSD)-\d+')
 
-# `UI-02–UI-05` 这种区间引用会把中间的条款藏起来，展开后再比对。
+# `RULE-02–RULE-05` 这种区间引用会把中间的条款藏起来，展开后再比对。
 _CLAUSE_RANGE = re.compile(r'(UI|FSD)-(\d+)\s*[–—~-]\s*(?:UI|FSD)?-?(\d+)')
 
 # 2.2 引用被覆盖条款时表示"只沿用其中一部分"的词。写了它，读者才看得出边界在哪。
@@ -84,25 +89,27 @@ QUALIFIERS = ('仅', '只', '其余', '以外', '之外')
 # 会把没限定的写法判成合法。要求成对出现。
 QUALIFIER_PATTERNS = (re.compile(r'除[^。；]{0,24}(?:外|之外)'),)
 
-# 「需要你拍板」下的每一项，要么是问句，要么指向 2.1。
-# 写成「确认……。」的结论句时，人只有"同意"一个动作，闸门退化成确认框。
+# 「需要用户决定的事项」下的每一项，要么是问句，要么指向 2.1。
+# 写成「确认……。」的结论句时，用户只有"同意"一个动作，闸门退化成确认框。
 PITCH_POINTER = '见 2.1'
 
-# 第 1 节末尾的「覆盖核对」表：spec 每条 R 落到「你会看到什么」的哪一句。
+# 第 1 节末尾的「覆盖核对」表：spec 每条 R 落到「用户会看到的变化」的哪一句。
 # 它和第 5 节的 `R → 验证` 同构：一个核"怎么做得到"，一个核"人看不看得见"。
 # 只核存在性与引文可查；引文和 R 说的是不是一回事，脚本判不了。
 _SEEN_HEAD = '覆盖核对'
 _SEEN_TABLE = re.compile(r'\*\*%s\*\*[^\n]*\n(?:[ \t]*\n)*((?:[ \t]*\|[^\n]*\n)+)' % _SEEN_HEAD)
-_VISIBLE_HEAD = '你会看到什么'
+# 新计划使用首个名称；其余名称只用于兼容不回写的旧计划。
+_VISIBLE_HEADS = ('用户会看到的变化', '你会看到什么')
+_PITCH_HEADS = ('需要用户决定的事项', '需要你拍板')
+_NO_PITCH_HEADS = ('无需用户决定', '无需你拍板')
 
-# 「你会看到什么」到哪里结束：只认模板里那几个小标题，不认空行。
-# 因为它常写成列表，而列表项之间空行、项内折行都合法——按空行截断会把第二条之后的画面丢掉，
-# 于是 lint 报"落点找不到"，逼人把本来正确的列表改成一段。认不出的粗体小标题算作内容，
-# 结果只会偏宽松，不会误伤。
-_VISIBLE_END_LABELS = ('怎么做到', '为什么这么切', '代价与放弃', '需要你拍板', '无需你拍板', '覆盖核对')
+# 「用户会看到的变化」到哪里结束：只认模板里那几个小标题，不认空行。
+# 列表项之间允许空行，项内允许折行，不能按空行截断。
+# 未识别的粗体小标题仍算内容，避免误报合法写法。
+_VISIBLE_END_LABELS = ('怎么做到', '为什么这么切', '代价与放弃', '覆盖核对') + _PITCH_HEADS + _NO_PITCH_HEADS
 _VISIBLE_PARA = re.compile(
-    r'\*\*%s\*\*\s*[：:]?\s*(.*?)(?=\n[ \t]*\*\*(?:%s)\*\*|\Z)'
-    % (_VISIBLE_HEAD, '|'.join(_VISIBLE_END_LABELS)),
+    r'\*\*(?:%s)\*\*\s*[：:]?\s*(.*?)(?=\n[ \t]*\*\*(?:%s)\*\*|\Z)'
+    % ('|'.join(_VISIBLE_HEADS), '|'.join(_VISIBLE_END_LABELS)),
     re.DOTALL,
 )
 
@@ -117,7 +124,7 @@ NO_SEEN_MARK = '无'
 def clause_ids(text: str) -> List[str]:
     """取出条款 ID，区间展开成逐条。
 
-    `UI-02–UI-05` 里没有 `UI-03` 这五个字符，但语义上包含它。
+    `RULE-02–RULE-05` 里没有 `RULE-03` 这个完整编号，但语义上包含它。
     不展开的话，把被覆盖的条款夹在区间中间就能绕过交叉核对。
     """
     out: List[str] = []
@@ -141,9 +148,17 @@ _R_REF = re.compile(r'R(\d+)')
 _T_REF = re.compile(r'T(\d+)')
 _MD_PATH = re.compile(r'[A-Za-z0-9_./-]+\.md')
 
-# 任务「改动」里被反引号包住的源码/测试路径。只认 lib/ 与 test/：
-# 3.3 的 diff 边界也是这两个根，范围外的路径（如 spec 目录的 review.md）另说。
-_CODE_PATH = re.compile(r'`((?:lib|test)/[^`]*)`')
+# 路径契约与语言、目录无关：改动及 3.3 首列用反引号逐个标注仓库相对路径。
+_CHANGE_PATH = re.compile(r'`([^`\n]+)`')
+
+
+def valid_change_path(path: str) -> bool:
+    """拒绝绝对路径、越界、通配与非规范分隔符，保留空格、Unicode 和点文件。"""
+    return bool(path) and not (
+        path.startswith('/') or '\\' in path or ':' in path
+        or any(char in path for char in '*?<>|')
+        or any(part in ('', '.', '..') for part in path.split('/'))
+    )
 _COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
 _SEP_CELL = re.compile(r'^:?-{2,}:?$')
 # Markdown 链接的尖括号目标：`[文本](<../../docs/x.md>)`。
@@ -312,7 +327,7 @@ def check_head(rep: Report, plan_dir: str, head: Dict[str, str], spec_head: Dict
         if key in head:
             rep.fail(
                 'L01',
-                'plan.md 头部不要写「%s」——提交前拿不到 SHA，填它必然过期；回滚写在风险表的「应对」里' % key,
+                'plan.md 头部不要写「%s」；头部只记录 Spec 和 Status，回滚步骤写在风险表的「应对」里' % key,
             )
 
     rep.status = head.get('Status', '')
@@ -357,7 +372,7 @@ def check_structure(rep: Report, text: str, sections: Dict[int, str]) -> None:
             if substantive_lines(sections.get(index, '')):
                 rep.fail(
                     'L02',
-                    'Status=draft 时第 %d 节必须为空——方案摘要还没过人确认，不许先写设计与任务' % index,
+                    'Status=draft 时第 %d 节必须为空——方案摘要还没经用户确认，不许先写设计与任务' % index,
                 )
     rep.ok('L02')
 
@@ -365,32 +380,31 @@ def check_structure(rep: Report, text: str, sections: Dict[int, str]) -> None:
 def check_summary(rep: Report, section: str) -> None:
     """L03 方案摘要：非空、不超行、有拍板栏。
 
-    30 行算的是"给人 2 分钟读完"的量，「覆盖核对」表是自检产物，不计入。
+    摘要正文最多 30 行；「覆盖核对」表用于自检，不计入。
     """
     lines = body_lines(_SEEN_TABLE.sub('', section))
     if not lines:
         rep.fail('L03', '第 1 节方案摘要是空的')
         return
     if len(lines) > SUMMARY_MAX_LINES:
-        rep.fail('L03', '方案摘要 %d 行，超过 %d 行——摘要是给人 2 分钟读完的' % (len(lines), SUMMARY_MAX_LINES))
+        rep.fail('L03', '方案摘要 %d 行，超过 %d 行——请精简表述，保留用户作决定所需的内容' % (len(lines), SUMMARY_MAX_LINES))
     text = _COMMENT.sub('', section)
-    if '需要你拍板' not in text and '无需你拍板' not in text:
-        rep.fail('L03', '第 1 节缺「需要你拍板」或「无需你拍板」，人不知道要不要表态')
+    if not any(label in text for label in _PITCH_HEADS + _NO_PITCH_HEADS):
+        rep.fail('L03', '第 1 节缺「需要用户决定的事项」或「无需用户决定」，用户不知道是否需要作决定')
     rep.ok('L03')
 
 
 def check_constraints(rep: Report, section: str, plan_dir: str) -> None:
-    """L04 第 2 节两张表：2.1 给人（一条一个决定），2.2 给 Agent（既有规范，按主题合并）。
+    """L04 第 2 节两张表：2.1 给用户（一条一个决定），2.2 给 Agent（既有规范，按主题合并）。
 
-    合成一张表是有代价的：既有规范会把"这次真的要人点头的例外"淹掉，
-    人读完十几行施工要求就开始整节跳过，闸门等于没设。所以分开写，也分开校验。
+    分开写、分开校验，避免日常执行要求淹没需要用户决定的例外。
     """
     subs = split_subsections(section)
     agree, follow = subs.get('2.1'), subs.get('2.2')
     if agree is None:
-        rep.fail('L04', '第 2 节缺「### 2.1 需要你同意」——人只需要读这一节，它必须单独存在')
+        rep.fail('L04', '第 2 节缺「### 2.1 需要用户确认的例外」——用户只需审阅例外表，它必须单独存在')
     if follow is None:
-        rep.fail('L04', '第 2 节缺「### 2.2 我自己照做」——既有规范不要和人要点头的例外挤在一张表里')
+        rep.fail('L04', '第 2 节缺「### 2.2 Agent 遵循的既有规范」——既有规范不要和需要用户确认的例外挤在一张表里')
     if agree is None or follow is None:
         return
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(plan_dir)))
@@ -434,13 +448,13 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> se
         if target is None:
             rep.fail(
                 'L04',
-                '第 2.1 节第 %d 行没标去向——这里是"需要你同意"的表，每条都要说明属于哪一种：'
+                '第 2.1 节第 %d 行没标去向——这里是"需要用户确认的例外"的表，每条都要说明属于哪一种：'
                 '覆盖 / 仅本次 / 回 spec / 先补约定' % number,
             )
         elif target == '既有':
             rep.fail(
                 'L04',
-                '第 2.1 节第 %d 行是「既有」——既有规范放 2.2，不要占人的注意力' % number,
+                '第 2.1 节第 %d 行是「既有」——既有规范放 2.2，不要占用户的注意力' % number,
             )
         else:
             rep.targets.append(target)
@@ -506,7 +520,7 @@ def _follow_items(section: str) -> List[str]:
 def _check_follow(
     rep: Report, section: str, repo_root: str, plan_dir: str, overridden: set
 ) -> None:
-    """2.2：每条一个主题，出处必须存在。人可以跳读，但 Agent 得找得到。"""
+    """2.2：每条一个主题，出处必须存在。用户可以跳读，但 Agent 得找得到。"""
     real = [item for item in _follow_items(section) if not _is_placeholder(item)]
     if not real:
         rep.fail('L04', '第 2.2 节没有列出任何既有规范——预研没做，或者约束被塞回了 2.1')
@@ -526,7 +540,7 @@ def _check_follow(
         if not paths:
             rep.fail(
                 'L04',
-                '第 2.2 节第 %d 条没写出处（形如 `docs/standards/xxx.md` FSD-01）：%s'
+                '第 2.2 节第 %d 条没写出处（形如 `docs/standards/xxx.md` REPORT-01）：%s'
                 % (number, item[:30]),
             )
             continue
@@ -549,7 +563,7 @@ def _check_override(rep: Report, number: int, what: str) -> None:
     if hit is None:
         rep.fail(
             'L04',
-            '第 2.1 节第 %d 行标了「覆盖」，但没写覆盖了哪一条（形如 `覆盖 docs/standards/ui.md UI-01`）'
+            '第 2.1 节第 %d 行标了「覆盖」，但没写覆盖了哪一条（形如 `覆盖 docs/standards/report.md REPORT-01`）'
             % number,
         )
         return
@@ -601,7 +615,7 @@ def check_vague(rep: Report, text: str) -> None:
 # 「S6 已选 A」写完，人还是不知道选了哪个；「大小按 1024 换算，最多一位小数」才可判断。
 _DIMENSION_ID = re.compile(r'(?<![A-Za-z0-9_])[SU][1-9](?![0-9A-Za-z_])')
 
-# 「需要你拍板」里允许出现 `维度：S3`，那是标签不是内容；先摘掉再查正文。
+# 「需要用户决定的事项」里允许出现 `维度：S3`，那是标签不是内容；先摘掉再查正文。
 _DIMENSION_LABEL = re.compile(r'维度\s*[:：]\s*`?[SU][1-9]`?')
 
 
@@ -610,9 +624,9 @@ def _strip_dimension_labels(text: str) -> str:
 
 
 def _pitch_items(summary: str) -> List[str]:
-    """取「需要你拍板」下面的编号项，含续行，遇到下一个粗体段落为止。"""
+    """取「需要用户决定的事项」下面的编号项，含续行，遇到下一个粗体段落为止。"""
     lines = summary.split('\n')
-    start = next((index for index, line in enumerate(lines) if '需要你拍板' in line), None)
+    start = next((index for index, line in enumerate(lines) if any(label in line for label in _PITCH_HEADS)), None)
     if start is None:
         return []
     items: List[str] = []
@@ -646,43 +660,43 @@ def check_human(rep: Report, sections: Dict[int, str]) -> None:
     文风本身判不了，剩下的靠阶段 4 的自检与交付时的第一句话。
     """
     summary = _COMMENT.sub('', sections.get(1, ''))
-    if '你会看到什么' not in summary:
+    if not any(label in summary for label in _VISIBLE_HEADS):
         rep.fail(
             'L10',
-            '第 1 节缺「你会看到什么」——人读完第一段就该知道做成什么样；'
-            '只有结构与术语，人只能靠猜，闸门就是空转',
+            '第 1 节缺「用户会看到的变化」——人读完第一段就该知道做成什么样；'
+            '请先写清用户会看到的结果，不要只写结构和术语',
         )
     hit = _DIMENSION_ID.search(_strip_dimension_labels(summary))
     if hit is not None:
         rep.fail(
             'L10',
             '第 1 节出现裸维度 ID「%s」——把访谈结论本身写出来'
-            '（写「大小按 1024 换算」，不写「S6 已选 A」）；维度 ID 只用在「需要你拍板」里'
+            '（写「大小按 1024 换算」，不写「S6 已选 A」）；在方案摘要中，维度 ID 只用作「需要用户决定的事项」的标签'
             % hit.group(0),
         )
 
     rows = grid_rows(split_subsections(sections.get(2, '')).get('2.1', ''))
     real = [cells for cells in rows if not _is_placeholder('|'.join(cells))]
-    if real and '无需你拍板' in summary:
+    if real and any(label in summary for label in _NO_PITCH_HEADS):
         rep.fail(
             'L10',
-            '第 1 节说「无需你拍板」，但 2.1 列了 %d 条要你同意的事——'
-            '人看到"无需拍板"就会跳过，那几条等于没写' % len(real),
+            '第 1 节说「无需用户决定」，但 2.1 列了 %d 条需要用户确认的例外——'
+            '用户看到"无需用户决定"就会跳过，那几条等于没写' % len(real),
         )
-    if '需要你拍板' in summary:
+    if any(label in summary for label in _PITCH_HEADS):
         items = _pitch_items(summary)
         if not items and PITCH_POINTER not in summary:
             rep.fail(
                 'L10',
-                '第 1 节写了「需要你拍板」却没列问题，也没指向 2.1——'
-                '要么写成问题，要么写「需要你拍板：见 2.1 …」，要么写「无需你拍板」',
+                '第 1 节写了「需要用户决定的事项」却没列问题，也没指向 2.1——'
+                '要么写成问题，要么写「需要用户决定的事项：见 2.1 …」，要么写「无需用户决定」',
             )
         for number, item in enumerate(items, 1):
             if not _is_pitch_question(item):
                 rep.fail(
                     'L10',
-                    '第 1 节拍板第 %d 项是结论不是问题（「%s」）——结论句只给人"同意"一个动作，'
-                    '闸门就成了确认框；要么给出两个可选动作，要么直接写「需要你拍板：见 2.1 …」，'
+                    '第 1 节拍板第 %d 项是结论不是问题（「%s」）——结论句只给用户"同意"一个动作，'
+                    '请给出两个可选动作，或直接写「需要用户决定的事项：见 2.1 …」，'
                     '不要换一套措辞把 2.1 再复述一遍' % (number, item[:28]),
                 )
     for number, cells in enumerate(rows, 1):
@@ -709,25 +723,22 @@ def check_human(rep: Report, sections: Dict[int, str]) -> None:
 def check_visible_map(rep: Report, sections: Dict[int, str]) -> None:
     """L11 每条 R 在第 1 节都有落点。
 
-    这条闸门存在的理由：第 1 节是对照 spec 第 2 节那句摘要写的，而验收标准在第 4 节的 R
-    里——两者信息量差一截。R9「滚动不截断」、R10「点击行无选中态」这类要求整条落不进
-    「你会看到什么」时，人评审看到的画面只有七成验收面，而 lint 照样 PASS。
-
-    机械部分只核存在性：R 编号与 spec 对得上、引文能在段落里逐字找到。
-    引文是不是同一件事，脚本判不了——那是阶段 6 agent 对证的事，见 rules/crosscheck.md。
+    对照 spec 第 4 节的逐条需求，而不是只看第 2 节的摘要，避免漏掉验收细节。
+    脚本只检查 R 编号是否对应、引文是否能在段落中逐字找到。
+    引文是否准确表达需求，由独立上下文核查，见 rules/crosscheck.md。
     """
     section = _COMMENT.sub('', sections.get(1, ''))
     block = _SEEN_TABLE.search(section)
     if block is None:
         rep.fail(
             'L11',
-            '第 1 节缺「**覆盖核对**」表——spec 每条 R 都要指出落到「你会看到什么」的哪一句。'
+            '第 1 节缺「**覆盖核对**」表——spec 每条 R 都要指出落到「用户会看到的变化」的哪一句。'
             '没有这张表，漏掉的 R 在人评审时不会显形',
         )
         return
     para = _VISIBLE_PARA.search(_SEEN_TABLE.sub('', section))
     if para is None or not para.group(1).strip():
-        rep.fail('L11', '第 1 节找不到「你会看到什么」的内容，覆盖核对没有可对照的落点')
+        rep.fail('L11', '第 1 节找不到「用户会看到的变化」的内容，覆盖核对没有可对照的落点')
         return
     visible = para.group(1)
 
@@ -768,7 +779,7 @@ def check_visible_map(rep: Report, sections: Dict[int, str]) -> None:
         elif quote not in visible:
             rep.fail(
                 'L11',
-                '%s 的落点「%s」在「你会看到什么」里找不到——落点要逐字照抄，改写后核对就成了空话'
+                '%s 的落点「%s」在「用户会看到的变化」里找不到——落点要逐字照抄，改写后核对就成了空话'
                 % (rid, quote),
             )
 
@@ -796,9 +807,14 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
     if not blocks:
         rep.fail('L05', '第 4 节没有任何任务（`- [ ] **T1** ...`）')
         return
+    inventory = grid_rows(split_subsections(design).get('3.3', ''))
+    for row in inventory:
+        paths = _CHANGE_PATH.findall(row[0]) if row else []
+        if not paths or any(not valid_change_path(path) for path in paths):
+            rep.fail('L05', '第 3.3 节每行必须用反引号逐个列出规范的仓库相对文件路径')
     files = design_files(design)
     if not files:
-        rep.fail('L05', '第 3.3 节没有影响文件清单——任务改什么无从核对，diff 边界也落不了地')
+        rep.fail('L05', '第 3.3 节没有影响文件清单——请列出允许改动的具体文件，才能核对任务范围')
     seen: List[int] = []
     for index, (tid, block) in enumerate(blocks, 1):
         rep.task_ids.append(tid)
@@ -827,8 +843,8 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
 def _check_deps(rep: Report, tid: int, value: str, seen: List[int]) -> None:
     """依赖必须指向排在它前面的任务。
 
-    只认编号：T4 写「依赖：T5」时，实现时先跑 T5 就没有 T4 的产物，
-    而 lint 如果说不出这句话，计划就只是看起来有序。
+    按编号检查：例如 T4 依赖 T5，说明任务顺序不成立。
+    应把提供所需文件、入口或数据的任务排在前面。
     """
     refs = [int(match.group(1)) for match in re.finditer(r'T(\d+)', value)]
     if not refs:
@@ -848,19 +864,22 @@ def _check_deps(rep: Report, tid: int, value: str, seen: List[int]) -> None:
 def _check_change(rep: Report, tid: int, value: str, files: set) -> None:
     """改动的路径必须在 3.3 清单内。
 
-    3.3 是 `sdd-impl` 的 diff 边界。任务里顺手写一个清单外的文件，
-    lint 不报，实现时就会静默扩张——边界写在表里却不核，等于没有。
+    3.3 列出实现阶段允许改动的文件，任务中不能增加清单外的文件。
     """
     if not files:
         return
-    for path in _CODE_PATH.findall(value):
-        if path in files:
+    paths = _CHANGE_PATH.findall(value)
+    if not paths:
+        rep.fail('L05', 'T%d 的改动必须用反引号逐个列出仓库相对路径' % tid)
+    for path in paths:
+        if not valid_change_path(path):
+            rep.fail('L05', 'T%d 的改动路径 `%s` 不是规范的仓库相对文件路径' % (tid, path))
             continue
-        if path.endswith('/') and any(name.startswith(path) for name in files):
+        if path in files:
             continue
         rep.fail(
             'L05',
-            'T%d 要改 `%s`，但它不在第 3.3 节的文件清单里——diff 只允许落在清单内' % (tid, path),
+            'T%d 要改 `%s`，但它不在第 3.3 节的文件清单里——只允许修改清单内的文件' % (tid, path),
         )
 
 
@@ -870,9 +889,9 @@ def design_files(design: str) -> set:
     for cells in grid_rows(split_subsections(design).get('3.3', '')):
         if not cells:
             continue
-        name = clean_cell(cells[0]).strip('`').strip()
-        if re.match(r'^(lib|test)/', name) and not _is_placeholder(name):
-            out.add(name)
+        for name in _CHANGE_PATH.findall(cells[0]):
+            if valid_change_path(name) and not _is_placeholder(name):
+                out.add(name)
     return out
 
 
@@ -887,6 +906,15 @@ def check_coverage(rep: Report, section5: str, section4: str) -> None:
             continue
         rid = clean_cell(cells[0])
         seen[rid] = seen.get(rid, 0) + 1
+        if len(cells) != 4:
+            rep.fail('L06', '%s 的验证行必须有 R、任务、自动验证、手工步骤四格' % rid)
+        auto = clean_cell(cells[2]) if len(cells) > 2 else ''
+        manual = clean_cell(cells[3]) if len(cells) > 3 else ''
+        absent = ('', '—', '-', '无', '不适用')
+        auto_empty = auto in absent or re.fullmatch(r'<[^<>]+>', auto) is not None
+        manual_empty = manual in absent or re.fullmatch(r'<[^<>]+>', manual) is not None
+        if auto_empty and manual_empty:
+            rep.fail('L06', '%s 的自动验证与手工步骤不能同时为空' % rid)
         task_cell = cells[1] if len(cells) > 1 else ''
         refs = [int(match.group(1)) for match in _T_REF.finditer(task_cell)]
         if not refs:
@@ -920,20 +948,28 @@ def check_coverage(rep: Report, section5: str, section4: str) -> None:
 
 
 def check_blocking(rep: Report, sections: Dict[int, str]) -> None:
-    """L08 阻断态：去向阻塞时不得 approved；approved 时设计、文件、风险非空；覆盖要有决策。"""
+    """L08 定稿完整性在 design-ok 即检查，不把用户的批准当作内容检查前置。"""
     blocked = [target for target in rep.targets if target in BLOCKING_TARGETS]
-    if blocked and rep.status == 'approved':
+    if blocked and rep.status in ('design-ok', 'approved'):
         rep.fail(
             'L08',
-            '第 2 节有「%s」，这份 plan 不能标 approved——先解决它，再定稿' % '、'.join(sorted(set(blocked))),
+            '第 2 节有「%s」，这份 plan 只能停在 draft——先解决它，再定稿' % '、'.join(sorted(set(blocked))),
         )
-    if rep.status == 'approved':
-        for index, label in ((3, '设计'), (6, '风险与回滚')):
-            if not body_lines(sections.get(index, '')):
-                rep.fail('L08', 'approved 时第 %d 节（%s）不能为空' % (index, label))
-        design_rows = grid_rows(sections.get(3, ''))
-        if not design_rows:
-            rep.fail('L08', 'approved 时第 3 节必须有决策表或影响文件表')
+    if rep.status in ('design-ok', 'approved'):
+        for index in range(3, 7):
+            if not substantive_lines(sections.get(index, '')):
+                rep.fail('L08', '%s 时第 %d 节必须有实际内容' % (rep.status, index))
+        design = split_subsections(sections.get(3, ''))
+        for key in ('3.1', '3.2', '3.3', '3.4'):
+            if not substantive_lines(design.get(key, '')):
+                rep.fail('L08', '%s 时第 %s 节不能为空' % (rep.status, key))
+        risks = sections.get(6, '')
+        risk_rows = grid_rows(risks)
+        if not risk_rows or any(len(row) < 3 or any(clean_cell(cell) in ('', '—', '-') or re.fullmatch(r'<[^<>]+>', clean_cell(cell)) is not None for cell in row[:3]) for row in risk_rows):
+            rep.fail('L08', '第 6 节必须有风险、触发信号和应对/回滚的非空数据行')
+        # 只核记录存在；语义是否通过必须独立对证，不能把这行当作审查证据。
+        if not re.search(r'^\*\*对证\*\*[：:]\s*\S', _COMMENT.sub('', risks), re.MULTILINE):
+            rep.fail('L08', '第 6 节缺对证记录；首轮 lint 前可记未运行，交付前必须实际完成')
         if '覆盖' in rep.targets:
             _check_override_decisions(rep, sections.get(3, ''))
     rep.ok('L08')
@@ -1000,7 +1036,7 @@ def _use_utf8_stdout() -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog='plan_lint.py',
-        description='sdd-plan 阶段闸门：机械校验 plan.md 与它对 spec.md 的承诺',
+        description='检查 plan.md 的格式，以及它与 spec.md 的对应关系',
     )
     parser.add_argument('spec_dir', help='spec 目录，如 specs/pNN-NNN-<slug>')
     args = parser.parse_args(argv)

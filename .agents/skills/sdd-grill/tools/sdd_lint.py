@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sdd-grill 阶段闸门的机械校验。
+"""检查 sdd-grill 需求文档和决策日志的固定格式。
 
 用法：
     python .agents/skills/sdd-grill/tools/sdd_lint.py <spec 目录>
@@ -11,14 +11,14 @@
     L03  R 编号连续、不重复、不超过 12 条
     L04  每条 R 有「反例」与「可观察证据」，范畴取值合法
     L05  第 5 节每条「不做」带「理由：」
-    L06  第 7 节每条待决问题带「维度：<ID>」与 A / B 两个选项
+    L06  第 7 节每条待决问题带「维度：<ID>」与 A / B 两个选项；有待决问题不得批准
     L07  头部「附带交付」与 R 上的范畴标记互相登记
-    L08  成本表十一项齐全、预算与型匹配、追加合法、用量不超授权
-    L09  覆盖矩阵维度集合 = 本型必做集合；不适用带理由；不许自证
+    L08  成本表十一项齐全；预算符合需求类型；追加合法；用量不超过批准额度
+    L09  覆盖矩阵恰好包含本类型必做维度；不适用有理由；待决状态与第 7 节双向对应
     L10  规范触碰清单存在；冲突项不许留在第 7 节
 
-只校验可判定的形状。判断性内容（R 写得对不对、取舍是否成立）不在这里，
-脚本也给不出。
+脚本只检查固定格式和可计算的规则。
+人仍需判断需求条目（R）是否正确、取舍是否合理；脚本不能替代这些判断。
 
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
 
@@ -33,9 +33,9 @@ import re
 import sys
 from typing import Dict, List, Optional, Tuple
 
-# ─── 形状常量 ────────────────────────────────────────────────────────────────
+# ─── 格式与规则常量 ────────────────────────────────────────────────────────────────
 #
-# 这些是本 skill 自己的规则，与 ../rules/dimensions.md 逐字对应，改一处必须同步另一处。
+# 这些规则属于本技能。维度和预算与 ../rules/dimensions.md 对应，修改时须同步。
 
 # 每种类型必做的维度 ID。
 REQUIRED_DIMS: Dict[str, List[str]] = {
@@ -63,7 +63,7 @@ BASE_HEAD_FIELDS = ('Spec', '类型', '上游', '附带交付', 'Status', '版�
 SPEC_ID_SHAPE = re.compile(r'^p\d{2}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*$')
 VERSION_SHAPE = re.compile(r'^v\d+$')
 HEAD_STATUS = ('draft', 'approved', 'stale')
-MATRIX_STATUS = ('已覆盖', '不适用', '已推翻并说明')
+MATRIX_STATUS = ('已覆盖', '不适用', '已推翻并说明', '待决')
 TOUCH_STATUS = ('无冲突', '冲突', '不涉及')
 
 # 成本表必须有十一行，顺序不限，缺一行就 FAIL。
@@ -99,11 +99,7 @@ def question_limit(spec_type: str) -> int:
 
 
 def clean_cell(raw: str) -> str:
-    """单元格取值：去空白与反引号。
-
-    模板习惯给取值加反引号（`` `已覆盖` ``），手写时又不加。判值前统一剥掉，
-    否则「已覆盖」和 `` `已覆盖` `` 会被当成两个不同的值——模板会过不了自己的闸门。
-    """
+    """去除反引号和两端空白，使带反引号与不带反引号的单元格取值相同。"""
     return raw.replace('`', '').strip()
 
 
@@ -147,10 +143,7 @@ def section_named(text: str, name: str) -> Optional[str]:
 
 
 def table_rows(section: str, first_cell: str) -> List[re.Match]:
-    """按「首格是 ID、后两格是状态与依据」解析三列表格行。
-
-    首格的反引号可有可无——模板里写成 `` `D1` ``，手写时常常不带，两种都必须认。
-    """
+    """解析 ID、状态、依据三列表格；首格的 ID 可以带反引号。"""
     pattern = re.compile(
         r'^\|\s*`?(%s)`?\s[^|]*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*$' % first_cell,
         re.MULTILINE,
@@ -217,7 +210,10 @@ def check_spec(rep: Report, text: str) -> None:
     rep.ok('L02')
     check_rs(rep, sections.get(4, ''))
     check_scope_out(rep, sections.get(5, ''))
-    check_pending(rep, sections.get(7, ''))
+    pending = sections.get(7, '')
+    check_pending(rep, pending)
+    if head.get('Status') == 'approved' and _PENDING_ITEM.search(pending):
+        rep.fail('L06', '第 7 节仍有待决问题，Status 不得为 approved；请先由用户决定')
     check_extra(rep, head.get('附带交付', '—'))
 
 
@@ -238,7 +234,7 @@ def check_head(rep: Report, head: Dict[str, str]) -> None:
     if not VERSION_SHAPE.fullmatch(version):
         rep.fail('L01', '版本必须形如 vN，实际「%s」' % version)
     if 'Approved' in head or 'Approved-Tag' in head:
-        rep.fail('L01', 'spec.md 头部已移除批准凭据字段，请删除旧字段；批准只以用户明确确认记录在 Status')
+        rep.fail('L01', 'spec.md 头部不得包含 Approved 或 Approved-Tag；用户明确确认后，只更新 Status')
     if status not in HEAD_STATUS:
         rep.fail('L01', 'Status 必须是 draft / approved / stale，实际「%s」' % status)
     if upstream != '—' and not SPEC_ID_SHAPE.fullmatch(upstream):
@@ -274,7 +270,7 @@ def check_rs(rep: Report, section: str) -> None:
             if hit is None:
                 rep.fail('L04', '%s 缺「**%s**：」' % (rid, field))
             elif len(hit.group(1).strip()) < 4:
-                rep.fail('L04', '%s 的「%s」是空的' % (rid, field))
+                rep.fail('L04', '%s 的「%s」至少需要 4 个非首尾空白字符' % (rid, field))
         tag = _SCOPE_TAG.search(block)
         if tag is None:
             continue
@@ -320,9 +316,11 @@ def check_extra(rep: Report, raw: str) -> None:
     for rid in listed:
         if rid not in rep.r_ids:
             rep.fail('L07', '附带交付引用了不存在的 %s' % rid)
+        elif rid not in rep.tagged_rs:
+            rep.fail('L07', '附带交付中的 %s 必须在第 4 节填写「**范畴**」' % rid)
     for rid in rep.tagged_rs:
         if rid not in listed:
-            rep.fail('L07', '%s 标了范畴，但没登记进「附带交付」，plan 看不到它' % rid)
+            rep.fail('L07', '%s 带有范畴标记，请同时在头部「附带交付」登记' % rid)
     rep.ok('L07')
 
 
@@ -355,7 +353,7 @@ def check_cost(rep: Report, text: str) -> None:
     if rep.spec_type in REQUIRED_DIMS:
         expected_limit = question_limit(rep.spec_type)
         if limit is not None and limit != expected_limit:
-            rep.fail('L08', '问题上限写的是 %d，按必做维度推应为 %d' % (limit, expected_limit))
+            rep.fail('L08', '问题上限为 %d；按本类型必做维度数加 3，应为 %d' % (limit, expected_limit))
         expected_tool = TOOL_BUDGET.get(rep.spec_type, 0)
         if budget is not None and budget != expected_tool:
             rep.fail('L08', '工具预算写的是 %d，%s 型应为 %d' % (budget, rep.spec_type, expected_tool))
@@ -379,7 +377,7 @@ def check_cost(rep: Report, text: str) -> None:
 
     reason = cost.get('追加理由', '—')
     if (q_extra > 0 or t_extra > 0) and reason in ('', '—'):
-        rep.fail('L08', '有追加额度却没写「追加理由」——没有理由的追加等于静默放宽上限')
+        rep.fail('L08', '有追加额度时，必须在「追加理由」说明谁批准、为什么仍是同一件事')
     no_extra = cost.get('问题追加', '—') == '—' and cost.get('工具追加', '—') == '—'
     if no_extra and reason not in ('', '—'):
         rep.fail('L08', '没有追加额度，但「追加理由」写了内容，两者矛盾')
@@ -419,7 +417,7 @@ def _allowance(rep: Report, label: str, raw: str) -> int:
 
 
 def check_matrix(rep: Report, text: str) -> None:
-    """L09 维度集合等于本型必做集合；状态合法；不适用带理由；不许自证。"""
+    """L09 必做维度齐全；状态合法；不适用有理由；待决状态与问题双向对应。"""
     section = section_named(text, '覆盖矩阵')
     if section is None:
         rep.fail('L09', 'grill.md 缺「## 覆盖矩阵」一节')
@@ -438,9 +436,13 @@ def check_matrix(rep: Report, text: str) -> None:
             rep.fail('L09', '覆盖矩阵缺必做维度 %s' % dim)
         for dim in sorted(actual - expected):
             rep.fail('L09', '覆盖矩阵多出 %s 型不要求的维度 %s' % (rep.spec_type, dim))
-    for dim in rep.pending_dims:
-        if rep.matrix_status.get(dim) == '已覆盖':
-            rep.fail('L09', '第 7 节把 %s 列为待决，矩阵却写「已覆盖」——覆盖矩阵在自证' % dim)
+    required = set(REQUIRED_DIMS.get(rep.spec_type, ()))
+    pending_required = set(rep.pending_dims) & required
+    matrix_pending = {dim for dim, status in rep.matrix_status.items() if status == '待决'}
+    for dim in sorted(pending_required - matrix_pending):
+        rep.fail('L09', '第 7 节将必做维度 %s 列为待决，覆盖矩阵必须标为「待决」' % dim)
+    for dim in sorted(matrix_pending - set(rep.pending_dims)):
+        rep.fail('L09', '覆盖矩阵将 %s 标为「待决」，但第 7 节没有对应问题' % dim)
     rep.ok('L09')
 
 
@@ -453,7 +455,7 @@ def check_touch(rep: Report, text: str) -> None:
     rows = table_rows(section, STANDARDS_ID)
     placeholders = _placeholder_rows(section)
     if placeholders:
-        rep.fail('L10', '「规范触碰」还留着 %d 行模板占位，没有真填' % placeholders)
+        rep.fail('L10', '「规范触碰」还有 %d 行未填写的模板占位，请填写或删除' % placeholders)
     if not rows and not placeholders and not _says_none(section):
         rep.fail('L10', '「规范触碰」清单为空，且没有写「无」')
     for row in rows:
@@ -461,7 +463,7 @@ def check_touch(rep: Report, text: str) -> None:
         if status not in TOUCH_STATUS:
             rep.fail('L10', '%s 的状态「%s」不在 %s 内' % (code, status, ' / '.join(TOUCH_STATUS)))
         if status == '冲突' and '§7' in basis:
-            rep.fail('L10', '%s 标了冲突却留在第 7 节——冲突必须进访谈，不许留给审阅人' % code)
+            rep.fail('L10', '%s 存在冲突，但依据指向第 7 节；请在访谈中解决并记录决定' % code)
     rep.ok('L10')
 
 
@@ -506,7 +508,7 @@ def _use_utf8_stdout() -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog='sdd_lint.py',
-        description='sdd-grill 阶段闸门：机械校验 spec.md 与 grill.md',
+        description='检查 sdd-grill 的 spec.md 与 grill.md 是否符合固定格式和规则',
     )
     parser.add_argument('spec_dir', help='spec 目录，如 specs/pNN-NNN-<slug>')
     args = parser.parse_args(argv)

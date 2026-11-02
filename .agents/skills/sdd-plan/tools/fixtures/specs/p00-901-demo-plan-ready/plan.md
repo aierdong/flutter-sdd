@@ -13,7 +13,7 @@ plan_lint 的 design-ok 回归样本：这份必须 PASS。
 
 ## 1. 方案摘要
 
-**你会看到什么**：
+**用户会看到的变化**：
 
 - 跑一次导入命令，同目录下多出一个 `report.tsv`。
 
@@ -25,7 +25,7 @@ plan_lint 的 design-ok 回归样本：这份必须 PASS。
 
 **代价**：十万行以上会在内存里攒住整份结果。
 
-**需要你拍板**：见 2.1 的 1 条。
+**需要用户决定的事项**：见 2.1 的 1 条。
 
 **覆盖核对**：
 
@@ -36,13 +36,13 @@ plan_lint 的 design-ok 回归样本：这份必须 PASS。
 
 ## 2. 约束
 
-### 2.1 需要你同意
+### 2.1 需要用户确认的例外
 
 | 这次要打破什么 | 为什么 | 什么时候回到标准 |
 |---|---|---|
 | 覆盖 [docs/standards/coding.md](<../../docs/standards/coding.md>) FSD-04：产物用 TSV | 使用方按制表符解析 | 下一个需要表格产物的 spec |
 
-### 2.2 我自己照做
+### 2.2 Agent 遵循的既有规范
 
 | 主题 | 出处与沿用范围 |
 |---|---|
@@ -78,13 +78,13 @@ plan_lint 的 design-ok 回归样本：这份必须 PASS。
 ## 4. 任务
 
 - [ ] **T1** 实现报告写出
-  - 改动：新建 `lib/report.dart`。
+  - 改动：新建 `lib/report.dart`、`test/report_test.dart`（含文件写出断言）。
   - 验证：`flutter test test/report_test.dart` → 命令结束时文件存在。
   - 覆盖：R1
   - 依赖：—
 
 - [ ] **T2** 补两列内容断言
-  - 改动：新建 `test/report_test.dart`。
+  - 改动：修改 `test/report_test.dart`，增加两列内容断言。
   - 验证：`flutter test test/report_test.dart` → 第一列是出错行、第二列是原因。
   - 覆盖：R2
   - 依赖：T1
@@ -102,4 +102,4 @@ plan_lint 的 design-ok 回归样本：这份必须 PASS。
 |---|---|---|
 | 进程中断留下半份报告 | 文件存在但行数不足 | 先写临时文件再改名，重跑 T1。 |
 
-**对证**：无缺口（V1–V5）。
+**对证**：回归夹具的格式示例，不代表执行过审查；真实交付须记录 V1–V8 的实际计数。

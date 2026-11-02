@@ -4,7 +4,9 @@
 
 ## 目标
 
-一个 Flutter 桌面应用，只读浏览 PostgreSQL 的库结构：
+本工作区的主要交付是 `.agents/skills/` 下的通用软件开发流程技能。`specs/` 保存迭代过程，Demo 用于验证技能，不是主要交付。
+
+当前 Demo 是一个 Flutter 桌面应用，只读浏览 PostgreSQL 的库结构：
 
 - 连接一个数据库，枚举其全部 schema，再取每个 schema 下的表。
 - database / schema / table 组成一棵可展开的树。
@@ -34,4 +36,10 @@ flutter test
 
 ## 阶段
 
-当前阶段：`p00`（流程验证与最小可用版本）。第一个 spec 建议：连接 → 树 → 表详情。
+当前阶段：`p00`（流程验证与最小可用版本）。
+
+## 流程技能现状
+
+- 已有：`sdd-grill`、`sdd-plan`，各自包含规则、模板和校验脚本。
+- 待建：`sdd-impl`、`sdd-review` 及对应模板。
+- 已有 spec 见 `specs/`，不在流程入口逐条维护。
