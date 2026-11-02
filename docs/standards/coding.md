@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| 版本 | v2 |
+| 版本 | v3 |
 | 状态 | 生效 |
 | 适用 | `lib/**`、`test/**`、`analysis_options.yaml` |
 | 目的 | 约束写法，并让“是否遵守”能用命令、diff 和测试结果判定 |
@@ -353,7 +353,7 @@ R: p00-001/R1
 
 ## 3. 审计
 
-审计顺序固定：先机械检查，再人工确认。A0–A5、A8 使用 bash + ripgrep；A6 使用 PowerShell；A7 在任意 shell 执行。把 `<base>` 换成上一个已验收提交，`<spec>` 换成当前 spec 目录，`<spec-id>` 换成当前 spec 编号。
+审计顺序固定：先机械检查，再人工确认。A0–A5、A8 使用 bash + ripgrep；A6 使用 bash + `find`/`awk`；A7 在任意 shell 执行。把 `<base>` 换成上一个已验收提交，`<spec>` 换成当前 spec 目录，`<spec-id>` 换成当前 spec 编号。
 
 ### A0 建立基线
 
@@ -433,16 +433,17 @@ rg -n 'TODO|FIXME' lib test
 
 ### A6 文件规模
 
-```powershell
-Get-ChildItem lib,test -Recurse -Filter *.dart |
-  Where-Object { $_.FullName -notmatch '\\(fixtures|generated)\\' -and $_.Name -notmatch '\.(g|freezed)\.dart$' } |
-  ForEach-Object {
-    $n = (Get-Content -LiteralPath $_.FullName).Count
-    if ($n -gt 250) { "$n`t$($_.FullName)" }
-  }
+```bash
+find lib test -type f -name '*.dart' \
+  -not -path '*/fixtures/*' -not -path '*/generated/*' \
+  -not -name '*.g.dart' -not -name '*.freezed.dart' |
+while IFS= read -r f; do
+  n=$(awk 'END { print NR }' "$f")
+  if [ "$n" -gt 250 ]; then printf '%s\t%s\n' "$n" "$f"; fi
+done
 ```
 
-无输出即通过。
+无输出即通过。行数用 `awk 'END { print NR }'` 数，不要换成 `wc -l`：文件末尾缺换行时 `wc -l` 少算一行，边界上会漏掉恰好超限的文件。也不要换成 gawk 的 `ENDFILE` 块，BSD awk（macOS）不支持。命中判断写成 `if` 而不是 `[ .. ] && ...`，否则末个文件不超限时整条管道返回 1，退出码会把“通过”和“命中”反过来。
 
 ### A7 静态闸门
 
