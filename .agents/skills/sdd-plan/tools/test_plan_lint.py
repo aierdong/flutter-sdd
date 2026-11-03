@@ -193,8 +193,91 @@ class PlanLintTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assert_rejected(self.ready().replace("lib/report.dart", path), "L05")
 
-    def test_missing_override_decision_in_design_ok(self):
-        self.assert_rejected(self.ready().replace("| 覆盖 | 下一个需要表格产物的 spec |", "| Agent 自定 | 下一个需要表格产物的 spec |"), "L08")
+    def test_override_decision_source_need_not_repeat_override(self):
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                with self.subTest(fixed_fields=fixed_fields, state=state):
+                    text = self.new_format() if fixed_fields else self.ready()
+                    text = text.replace('`design-ok`', '`%s`' % state)
+                    text = text.replace('- 来源：覆盖', '- 来源：Agent 自定') if fixed_fields else text.replace(
+                        '| 覆盖 | 下一个需要表格产物的 spec |',
+                        '| Agent 自定 | 下一个需要表格产物的 spec |')
+                    code, output = self.run_plan(text)
+                    self.assertEqual(code, 0, output)
+
+    def reference_only_plan(self, fixed_fields, state):
+        """保留 2.1 的覆盖例外，3.2 仅引用它，不重复选择与放弃。"""
+        text = self.new_format() if fixed_fields else self.ready()
+        text = text.replace('`design-ok`', '`%s`' % state)
+        start = text.index('### 3.2')
+        end = text.index('### 3.3', start)
+        return text[:start] + '### 3.2 决策\n\n- 沿用第 2.1 节的报告格式例外，无新增取舍。\n\n' + text[end:]
+
+    def test_override_reference_without_new_decision_is_legal(self):
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                with self.subTest(fixed_fields=fixed_fields, state=state):
+                    code, output = self.run_plan(self.reference_only_plan(fixed_fields, state))
+                    self.assertEqual(code, 0, output)
+
+    def test_override_reference_still_requires_exception_reason(self):
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                with self.subTest(fixed_fields=fixed_fields, state=state):
+                    text = self.reference_only_plan(fixed_fields, state)
+                    self.assert_rejected(text.replace('使用方按制表符解析', ''), 'L04')
+
+    def test_override_reference_still_requires_judgable_return_condition(self):
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                for condition in lint.VAGUE_DECAY:
+                    with self.subTest(fixed_fields=fixed_fields, state=state, condition=condition):
+                        text = self.reference_only_plan(fixed_fields, state)
+                        self.assert_rejected(text.replace('下一个需要表格产物的 spec', condition), 'L04')
+
+    def test_override_reference_still_requires_valid_override_target(self):
+        target = '[docs/standards/coding.md](<../../docs/standards/coding.md>) FSD-04'
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                for invalid in ('通用格式要求', 'docs/standards/missing.md REPORT-01'):
+                    with self.subTest(fixed_fields=fixed_fields, state=state, invalid=invalid):
+                        text = self.reference_only_plan(fixed_fields, state)
+                        self.assertIn(target, text)
+                        self.assert_rejected(text.replace(target, invalid, 1), 'L04')
+
+    def test_explicit_decisions_require_all_fields(self):
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                for index, field in enumerate(lint.DECISION_FIELDS):
+                    for missing in (False, True):
+                        with self.subTest(fixed_fields=fixed_fields, state=state,
+                                          field=field, missing=missing):
+                            text = self.new_format() if fixed_fields else self.ready()
+                            text = text.replace('`design-ok`', '`%s`' % state)
+                            start = text.index('### 3.2')
+                            end = text.index('### 3.3', start)
+                            decision = text[start:end]
+                            if fixed_fields:
+                                decision = re.sub(r'^- %s：[^\n]*' % field,
+                                                  '' if missing else '- %s：' % field,
+                                                  decision, flags=re.MULTILINE)
+                            else:
+                                row = next(line for line in decision.splitlines() if line.startswith('| 产物格式 |'))
+                                cells = row.split('|')
+                                if missing:
+                                    del cells[index + 1]
+                                else:
+                                    cells[index + 1] = ' '
+                                decision = decision.replace(row, '|'.join(cells))
+                            self.assert_rejected(text[:start] + decision + text[end:], 'L08')
+
+    def test_empty_decision_subsection_in_both_delivery_states(self):
+        for fixed_fields in (False, True):
+            for state in ('design-ok', 'approved'):
+                with self.subTest(fixed_fields=fixed_fields, state=state):
+                    text = self.reference_only_plan(fixed_fields, state)
+                    text = text.replace('- 沿用第 2.1 节的报告格式例外，无新增取舍。', '')
+                    self.assert_rejected(text, 'L08')
 
     def test_empty_design_subsection(self):
         text = self.ready().replace("不引入依赖，不改 `analysis_options.yaml`。", "")
@@ -275,7 +358,6 @@ class PlanLintTests(unittest.TestCase):
         self.assert_rejected(text.replace('- 任务：T1', '- 任务：T2'), 'L06')
         self.assert_rejected(text.replace('- 任务：T1', '- 任务：T1、T2'), 'L06')
         self.assert_rejected(text.replace('  - 覆盖：R1', '  - 覆盖：R2\n  - 覆盖：R1'), 'L05')
-        self.assert_rejected(text.replace('- 来源：覆盖', '- 来源：Agent 自定'), 'L08')
         self.assert_rejected(text.replace('FSD-01–FSD-03', 'FSD-01–FSD-04'), 'L04')
         self.assert_rejected(text.replace('- 落点：同目录下多出一个', '- 落点：与实际显示不一致'), 'L11')
         self.assert_rejected(text.replace('  - 改动：新建 `lib/report.dart`',

@@ -17,13 +17,13 @@ Agent 使用字段列表填写计划，并用四级标题分隔记录。
     L01  头部两项齐全、无版本控制字段；Spec 可解析且与目录名一致；spec 版本与状态对得上 plan 的声明
     L02  第 1–6 节结构；Status=draft 时第 3–6 节必须为空（方案尚未确认）
     L03  方案摘要非空、不超过 30 行、有「需要用户决定的事项」或「无需用户决定」
-    L04  第 2 节两组记录：2.1 需要用户确认的例外（三字段、去向合法、覆盖写明条款）、2.2 Agent 遵循的既有规范（每条有真实出处；
+    L04  第 2 节两组记录：2.1 需要用户确认的例外（三字段、去向合法、覆盖写明条款、理由及可判断的回归条件）、2.2 Agent 遵循的既有规范（每条有真实出处；
          引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
     L05  任务：编号连续、四行齐全、验证可执行；依赖只指前面的任务；改动不越 3.3 清单
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态只能 draft；design-ok / approved 时第 3–6 节及设计子节完整，
-         风险记录与对证记录存在，且「覆盖」必须对应带失效条件的决策；不判语义通过
+         显式决策记录字段完整，允许仅引用 2.1 而无新增取舍；风险记录与对证记录存在；不判语义通过
     L09  spec 第 7 节还有待决项时，plan 不得存在
     L10  人读区：第 1 节有「用户会看到的变化」、无裸维度 ID、拍板项是问句或指向 2.1；
          2.1 的「为什么」一句话、不超字数
@@ -63,7 +63,7 @@ SUMMARY_MAX_LINES = 30
 # 任务块的四行，缺一行就 FAIL。
 TASK_FIELDS = ('改动', '验证', '覆盖', '依赖')
 
-# 约束的去向。`覆盖` 是正常做法，但必须留痕：写明被覆盖的条款，并在决策表里给出失效条件。
+# 约束的去向。`覆盖` 是正常做法，但须在 2.1 写明被覆盖条款、理由和可判断的回归条件。
 # 后两个是阻断态：出现时这份 plan 不能进 approved。
 # 这些去向只用于 2.1 的待确认事项；2.2 每行都按 `既有` 处理。
 ALLOWED_TARGETS = ('既有', '覆盖', '回 spec', '先补约定', '仅本次')
@@ -520,7 +520,7 @@ def _is_placeholder(text: str) -> bool:
 
 
 def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> set:
-    """2.1：三格；首格标去向；覆盖必须写明被覆盖的条款，失效条件可判断。
+    """2.1：三格；首格标去向；理由非空，覆盖写明条款，回归条件可判断。
 
     返回被覆盖的条款 ID 集合，交给 2.2 做交叉核对。
     """
@@ -536,7 +536,9 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> se
                 % (number, len(cells)),
             )
             continue
-        what, decay = clean_cell(cells[0]), clean_cell(cells[2])
+        what, why, decay = (clean_cell(cell) for cell in cells)
+        if not why:
+            rep.fail('L04', '第 2.1 节第 %d 行没写「为什么」' % number)
         if not what:
             rep.fail('L04', '第 2.1 节第 %d 行没写打破的是什么' % number)
             continue
@@ -1075,36 +1077,19 @@ def check_blocking(rep: Report, sections: Dict[int, str]) -> None:
             if not substantive_lines(design.get(key, '')):
                 rep.fail('L08', '%s 时第 %s 节不能为空' % (rep.status, key))
         risks = sections.get(6, '')
-        record_rows(design.get('3.2', ''), DECISION_FIELDS, rep, 'L08')
+        # 2.1 已校验覆盖例外；3.2 可仅引用它，但显式决策仍须字段完整。
+        decisions = record_rows(design.get('3.2', ''), DECISION_FIELDS, rep, 'L08')
+        for number, row in enumerate(decisions, 1):
+            if len(row) != len(DECISION_FIELDS) or any(not clean_cell(cell) for cell in row):
+                rep.fail('L08', '第 3.2 节第 %d 条决策必须有六个非空字段：%s'
+                         % (number, ' / '.join(DECISION_FIELDS)))
         risk_rows = record_rows(risks, RISK_FIELDS, rep, 'L08')
         if not risk_rows or any(len(row) < 3 or any(clean_cell(cell) in ('', '—', '-') or re.fullmatch(r'<[^<>]+>', clean_cell(cell)) is not None for cell in row[:3]) for row in risk_rows):
             rep.fail('L08', '第 6 节必须有风险、触发信号和应对/回滚的非空数据行')
         # 只核记录存在；语义是否通过必须独立对证，不能把这行当作审查证据。
         if not re.search(r'^\*\*对证\*\*[：:]\s*\S', _COMMENT.sub('', risks), re.MULTILINE):
             rep.fail('L08', '第 6 节缺对证记录；首轮 lint 前可记未运行，交付前必须实际完成')
-        if '覆盖' in rep.targets:
-            _check_override_decisions(rep, sections.get(3, ''))
     rep.ok('L08')
-
-
-def _check_override_decisions(rep: Report, design: str) -> None:
-    """第 2 节声明了 `覆盖`，第 3.2 节就得有来源为 `覆盖` 的决策，且失效条件可判断。"""
-    rows = record_rows(split_subsections(design).get('3.2', ''), DECISION_FIELDS)
-    overrides = [row for row in rows if len(row) > 5 and clean_cell(row[4]) == '覆盖']
-    if not overrides:
-        rep.fail(
-            'L08',
-            '第 2 节有「覆盖」去向，但第 3.2 节没有来源为 `覆盖` 的决策——覆盖要写清理由与何时失效',
-        )
-        return
-    for row in overrides:
-        decay = clean_cell(row[5])
-        if decay in ('', '—', '-', '暂不', '永不', '长期'):
-            rep.fail(
-                'L08',
-                '覆盖决策「%s」的「何时重评」不可判断（「%s」）——写清什么条件下回到通用规范'
-                % (clean_cell(row[0]), decay),
-            )
 
 
 def check_spec_pending(rep: Report, spec_text: str) -> None:
