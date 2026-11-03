@@ -1,4 +1,4 @@
-# Grill 决策日志：p00-002-lightweight-sdd-grill
+# Grill 决策日志：p00-002-lightweight-sdd-requirement
 
 | 成本 | 值 |
 |---|---|
@@ -21,16 +21,16 @@
 ## 事实收集
 
 - 已读（变更前）：`AGENTS.md` 流程表与硬规则 → 原流程要求同 commit approval tag，并要求流程变更经 spec 管理。
-- 已读（变更前）：`.agents/skills/sdd-grill/SKILL.md`「批准怎么记」→ 原批准依赖 tag、commit 和 diff 校验，并提供专用批准脚本。
-- 已读（变更前）：`.agents/skills/sdd-grill/templates/spec.md` 头字段 → 原模板含 `Approved-Tag` 字段。
-- 已读（变更前）：`.agents/skills/sdd-grill/tools/sdd_lint.py` L01 → 原规则要求 `Approved-Tag` 与 spec 编号、版本匹配。
-- 已读（变更前）：`.agents/skills/sdd-grill/tools/approve_spec.py` → 旧脚本会改状态、提交并创建 annotated tag。
+- 已读（变更前）：`.agents/skills/sdd-requirement/SKILL.md`「批准怎么记」→ 原批准依赖 tag、commit 和 diff 校验，并提供专用批准脚本。
+- 已读（变更前）：`.agents/skills/sdd-requirement/templates/spec.md` 头字段 → 原模板含 `Approved-Tag` 字段。
+- 已读（变更前）：`.agents/skills/sdd-requirement/tools/sdd_lint.py` L01 → 原规则要求 `Approved-Tag` 与 spec 编号、版本匹配。
+- 已读（变更前）：`.agents/skills/sdd-requirement/tools/approve_spec.py` → 旧脚本会改状态、提交并创建 annotated tag。
 - 已读：`specs/p00-001-schema-tables-page/spec.md:127-129`、`grill.md:119-123` → FSD-11 曾延期到后续代码交付或单独配置 spec；本次将其迁移到根目录 `FOLLOW.UPS.md`，登记为 FUP-001。
 - 未读：无；本次追加工具额度用于核对流程实现与现存延期事项。
 
 ## 决策
 
-用户明确指示（不计问题数）：批准以“用户确认需求可以进入下一步”为准，不再要求批准 tag / 特殊 commit；明确延期到未来的事项自动记录至根目录 `FOLLOW.UPS.md`，每次启动 `sdd-grill` 时检查。
+用户明确指示（不计问题数）：批准以“用户确认需求可以进入下一步”为准，不再要求批准 tag / 特殊 commit；明确延期到未来的事项自动记录至根目录 `FOLLOW.UPS.md`，每次启动 `sdd-requirement` 时检查。
 → R1 / R2 / R3
 
 用户明确补充（不计问题数）：用户提出的实现或技术需求也应由 spec 约束 plan，不按“产品需求 / 技术需求”角色边界自行挪动。
@@ -40,18 +40,18 @@
 
 | ID | 本次检查/处理结果 | 来源决定 | 后续触发条件 |
 |---|---|---|---|
-| FUP-001 | 已从 p00-001 迁移到根待办；本次流程文档变更未触发 | p00-001 Q12 / §6 | 下一份需要新增或修改 Dart 代码的 spec，或专门处理分析器配置的 spec，启动 sdd-grill 时 |
+| FUP-001 | 已从 p00-001 迁移到根待办；本次流程文档变更未触发 | p00-001 Q12 / §6 | 下一份需要新增或修改 Dart 代码的 spec，或专门处理分析器配置的 spec，启动 sdd-requirement 时 |
 
 ## 覆盖矩阵
 
 | 维度 | 状态 | 依据 |
 |---|---|---|
 | D1 失败与部分失败 | 已覆盖 | R2、R3：触发点不清先澄清；文件缺失时创建；不静默丢弃待办 |
-| D2 边界与既有行为 | 已覆盖 | R1、§5：只更改 sdd-grill 的批准交接与延期提醒，保留未批准不得进入 plan |
+| D2 边界与既有行为 | 已覆盖 | R1、§5：只更改 sdd-requirement 的批准交接与延期提醒，保留未批准不得进入 plan |
 | D3 空与极值 | 已覆盖 | R3：FOLLOW.UPS.md 不存在时创建；启动检查空清单及多条待办 |
 | D4 并发与顺序 | 不适用 | 本流程按单次 Grill 顺序追加；并行编辑产生的普通 Git 冲突由合并者解决，不引入并发写入机制 |
 | D5 权限与密钥 | 已覆盖 | R1：批准必须来自用户明确表达；FOLLOW.UPS 仅记录任务，不记录密钥或连接信息 |
 | D6 可逆性 | 不适用 | 只改 Markdown 状态与待办行，可通过普通文档编辑恢复；不涉及外部或不可逆操作 |
 | N1 首版边界 | 已覆盖 | §5：不引入 issue tracker、自动派发、负责人、估时或截止日期 |
 | N2 用户与场景 | 已覆盖 | §1–3：针对个人/小团队减少批准手续并避免延期任务遗忘 |
-| N3 与既有能力的关系 | 已覆盖 | R1–R4：复用 spec Status 与 sdd-grill 启动流程，不改变 plan/impl/review；spec 内容继续约束下游 plan |
+| N3 与既有能力的关系 | 已覆盖 | R1–R4：复用 spec Status 与 sdd-requirement 启动流程，不改变 plan/impl/review；spec 内容继续约束下游 plan |

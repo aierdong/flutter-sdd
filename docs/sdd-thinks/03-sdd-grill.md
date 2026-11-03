@@ -1,6 +1,6 @@
-# sdd-grill：把一条需求问透
+# sdd-requirement：把一条需求问透
 
-> 草案：`../kiro-spec/skills/sdd-grill/SKILL.md`、`rules/dimensions.md`
+> 草案：`../kiro-spec/skills/sdd-requirement/SKILL.md`、`rules/dimensions.md`
 > 模板：`../kiro-spec/templates/spec.md`
 > 迁入新仓库前需要按 `AGENTS.md` 调整，清单见 `05-next-steps.md`。
 
@@ -21,7 +21,7 @@
 | `grill-me` | `grilling` 的触发别名 | 同上 |
 | `brainstorming` | 项目级设计：拆分、2–3 个方案、写设计文档 | 管"做成什么系统"，不管"这一条需求要什么" |
 
-`sdd-grill` 的差异化不在提问风格，而在**产物契约**（`spec.md` 第 1–6 节 + `grill.md`）和**覆盖矩阵**。
+`sdd-requirement` 的差异化不在提问风格，而在**产物契约**（`spec.md` 第 1–6 节 + `grill.md`）和**覆盖矩阵**。
 
 ## 三次演进
 
@@ -110,7 +110,7 @@ A: 不回滚。删除已提交，跨库回滚不可行。
 
 ## 三型的必问维度（摘要）
 
-完整问题库见 `../kiro-spec/skills/sdd-grill/rules/dimensions.md`。
+完整问题库见 `../kiro-spec/skills/sdd-requirement/rules/dimensions.md`。
 
 **通用六维度**：失败与部分失败、边界与既有行为、空与极值、并发与顺序、权限与密钥、可逆性。
 

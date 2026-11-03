@@ -1,6 +1,6 @@
 # Follow-ups
 
-只记录已明确承诺未来处理的事项，不是所有「明确不做」的集合。`sdd-grill` 每次启动时检查本文件；待办必须有可判断的触发条件和完成标准。
+只记录已明确承诺未来处理的事项，不是所有「明确不做」的集合。`sdd-requirement` 每次启动时检查本文件；待办必须有可判断的触发条件和完成标准。
 
 状态只有两个：`待办` / `进行中`。
 
@@ -10,4 +10,4 @@ ID 不复用。删掉的 `FUP-NNN` 永久作废，新条目取当前最大值 +1
 
 | ID | 状态 | 事项 | 来源 spec | 触发条件 | 完成标准 |
 |---|---|---|---|---|---|
-| FUP-001 | 待办 | 补齐 FSD-11 严格分析器配置，并按该规范完成格式、分析和测试验证 | [p00-001 grill.md：Q12](specs/p00-001-schema-tables-page/grill.md) | 下一份需要新增或修改 Dart 代码的 spec，或专门处理分析器配置的 spec，启动 `sdd-grill` 时检查并决定由该 spec 承接还是单独建 spec | `analysis_options.yaml` 包含 FSD-11 要求的严格选项与 lint 规则；`dart format`、`flutter analyze`、`flutter test` 均通过 |
+| FUP-001 | 待办 | 补齐 FSD-11 严格分析器配置，并按该规范完成格式、分析和测试验证 | [p00-001 grill.md：Q12](specs/p00-001-schema-tables-page/grill.md) | 下一份需要新增或修改 Dart 代码的 spec，或专门处理分析器配置的 spec，启动 `sdd-requirement` 时检查并决定由该 spec 承接还是单独建 spec | `analysis_options.yaml` 包含 FSD-11 要求的严格选项与 lint 规则；`dart format`、`flutter analyze`、`flutter test` 均通过 |

@@ -1,5 +1,5 @@
 ---
-name: sdd-grill
+name: sdd-requirement
 description: 把一条需求问透——新建、增量或修正——产出 spec.md 第 1–6 节与决策日志。SDD 流程的起点；不做技术方案、不写执行计划、不改代码。
 allowed-tools: Read, Grep, Glob, Write, Edit, AskUserQuestion
 argument-hint: <需求描述 | spec 编号>
@@ -7,7 +7,7 @@ metadata:
   shared-rules: "rules/dimensions.md"
 ---
 
-# sdd-grill
+# sdd-requirement
 
 ## 它解决什么问题
 
@@ -25,7 +25,7 @@ metadata:
 ## 在流程里的位置
 
 ```text
-sdd-grill   →  spec.md   审阅区，人批准
+sdd-requirement   →  spec.md   审阅区，人批准
      ↓
 sdd-plan    →  plan.md   执行区，机器自检
      ↓

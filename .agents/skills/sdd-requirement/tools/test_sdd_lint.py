@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""使用独立的导入文件示例，检查 sdd-grill 的正反场景。"""
+"""使用独立的导入文件示例，检查 sdd-requirement 的正反场景。"""
 
 import contextlib
 import importlib.util

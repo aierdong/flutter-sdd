@@ -1,5 +1,5 @@
 ---
-name: sdd-grill
+name: sdd-requirement
 description: 通过访谈明确新建、增量或修正需求，产出 spec.md 第 1–7 节与决策日志。用户提出的技术约束也写入 spec；不擅自选型、不写执行计划、不改代码。
 allowed-tools: Read, Grep, Glob, Write, Edit, AskUserQuestion, Bash
 argument-hint: <需求描述 | spec 编号>
@@ -7,7 +7,7 @@ metadata:
   shared-rules: "rules/dimensions.md"
 ---
 
-# sdd-grill
+# sdd-requirement
 
 ## 它解决什么问题
 
@@ -25,7 +25,7 @@ metadata:
 ## 在流程里的位置
 
 ```text
-sdd-grill   →  spec.md + grill.md   用户明确确认后进入下一步
+sdd-requirement   →  spec.md + grill.md   用户明确确认后进入下一步
      ↓
 sdd-plan    →  plan.md              第 1–2 节供人审阅，第 3–6 节供 Agent 执行
      ↓
@@ -260,7 +260,7 @@ Agent 必须先满足以下要求才能组装 spec。文档写完后还必须运
 | 诚实 | 待决问题不包含可查事实；内容不是为通过检查而填的空话 | 人 | Agent 回阶段 1 补查 |
 
 ```bash
-python .agents/skills/sdd-grill/tools/sdd_lint.py specs/pNN-NNN-<slug>
+python .agents/skills/sdd-requirement/tools/sdd_lint.py specs/pNN-NNN-<slug>
 ```
 
 lint 有 FAIL 时，Agent 不交付 spec，也不通过解释绕过检查。文档不符合现行规则时，Agent 修正文档。怀疑校验规则有误时，Agent 暂停交付，向用户说明问题、依据和拟议变更；用户明确确认后，才按确认范围修改规则和校验。普通使用本技能时，Agent 不得自行修改校验来让文档通过。

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""检查 sdd-grill 需求文档和决策日志的固定格式。
+"""检查 sdd-requirement 需求文档和决策日志的固定格式。
 
 用法：
-    python .agents/skills/sdd-grill/tools/sdd_lint.py <spec 目录>
+    python .agents/skills/sdd-requirement/tools/sdd_lint.py <spec 目录>
 
 校验项：
 
@@ -563,7 +563,7 @@ def _use_utf8_stdout() -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog='sdd_lint.py',
-        description='检查 sdd-grill 的 spec.md 与 grill.md 是否符合固定格式和规则',
+        description='检查 sdd-requirement 的 spec.md 与 grill.md 是否符合固定格式和规则',
     )
     parser.add_argument('spec_dir', help='spec 目录，如 specs/pNN-NNN-<slug>')
     args = parser.parse_args(argv)

@@ -9,7 +9,7 @@
 ### 1. 目录落位
 
 ```text
-.agents/skills/sdd-grill/
+.agents/skills/sdd-requirement/
 ├── SKILL.md
 ├── rules/dimensions.md
 └── templates/spec.md        ← 从 docs/kiro-spec/templates/ 移进来
@@ -89,14 +89,14 @@ Go 版原型在原仓库 `loomidbx-v3` 的 `scripts/sdd-check.ps1` / `sdd-check.
 
 如果 001 跑完发现"验证流程"这个目标需要更多真实感，再决定 002 与 003 合并还是分开。
 
-> 第一次跑 `sdd-grill` 时，第一个问题就应该是这个拆分判断——它正好演练"发现是两件事，先拆"这条规则。
+> 第一次跑 `sdd-requirement` 时，第一个问题就应该是这个拆分判断——它正好演练"发现是两件事，先拆"这条规则。
 
 ## 三、接下来的顺序
 
 | 顺序 | 做什么 | 为什么这个顺序 |
 |---|---|---|
-| 1 | 按上面 6 处改动，把 `sdd-grill` 落成 `.agents/skills/sdd-grill/` | 没有可用技能，后面都是纸上讨论 |
-| 2 | 真实跑一次 `sdd-grill`，产出 `p00-001` 的 `spec.md` | 用真实需求检验模板与维度清单 |
+| 1 | 按上面 6 处改动，把 `sdd-requirement` 落成 `.agents/skills/sdd-requirement/` | 没有可用技能，后面都是纸上讨论 |
+| 2 | 真实跑一次 `sdd-requirement`，产出 `p00-001` 的 `spec.md` | 用真实需求检验模板与维度清单 |
 | 3 | 写 `sdd-plan`（`plan.md` 模板 + 自检矩阵） | spec 批准后的下一步，需求最清楚 |
 | 4 | 写 `sdd-impl` + 移植检查脚本 | 实现阶段需要有证据可复用 |
 | 5 | 写 `sdd-review`（`review.md`） | 收口，且能反过来检验前三段 |
@@ -128,7 +128,7 @@ Go 版原型在原仓库 `loomidbx-v3` 的 `scripts/sdd-check.ps1` / `sdd-check.
 
 ### 先定唯一权威来源，再写脚本
 
-现在同一个技能有两份实体：`docs/sdd-thinks/`（设计）与 `.agents/skills/sdd-grill/`（运行副本），而 `.agents/skills/sdd-grill/` 的所有权属于流程项目、物理位置却在 Demo 仓库里。
+现在同一个技能有两份实体：`docs/sdd-thinks/`（设计）与 `.agents/skills/sdd-requirement/`（运行副本），而 `.agents/skills/sdd-requirement/` 的所有权属于流程项目、物理位置却在 Demo 仓库里。
 
 **脚本必须从"流程项目的源"取文件，Demo 里的 `.agents/skills/` 是产物，不是源。** 否则同一份 `SKILL.md` 活在两处，迟早漂移——这个坑在上一轮已经踩过一次（两个目录下的 skill 内容不一致）。
 
@@ -136,7 +136,7 @@ Go 版原型在原仓库 `loomidbx-v3` 的 `scripts/sdd-check.ps1` / `sdd-check.
 
 ```text
 skills/            # 唯一权威来源
-├── sdd-grill/{SKILL.md, rules/, templates/}
+├── sdd-requirement/{SKILL.md, rules/, templates/}
 ├── sdd-plan/...
 └── sdd-impl/...
 templates/         # 脚手架生成 project.md / steering.md / AGENTS.md 的模板
@@ -158,4 +158,4 @@ templates/         # 脚手架生成 project.md / steering.md / AGENTS.md 的模
 
 - 生成的技能目录结构完整：每个技能都有 `SKILL.md`，引用到的 `rules/`、`templates/` 都存在；
 - 生成文档里的相对链接全部可解析；
-- 在一个空项目上跑一遍 `sdd-grill`，能产出 `spec.md` 而不是报错要人补信息。
+- 在一个空项目上跑一遍 `sdd-requirement`，能产出 `spec.md` 而不是报错要人补信息。

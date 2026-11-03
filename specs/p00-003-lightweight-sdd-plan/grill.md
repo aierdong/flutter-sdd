@@ -21,12 +21,12 @@
 ## 事实收集
 
 - 已读：`AGENTS.md:20-35` 流程表 → 计划阶段的通过条件只有一句"每条 R 都有设计、任务与验证"，且 `plan.md` 定义为"给 Agent 看"，人没有表态时点。
-- 已读：`.agents/skills/sdd-grill/SKILL.md:301-313` 下游契约 → plan 需要 R 列表、不做清单、影响面、第 6 节决策、第 7 节遗留、附带交付、成本基线七样。
-- 已读：`.agents/skills/sdd-grill/tools/sdd_lint.py:36-90` 形状常量 → 新脚本沿用"常量 + 解析 + 结果容器 + 分节检查 + 入口"的分段，退出码 0/1/2。
+- 已读：`.agents/skills/sdd-requirement/SKILL.md:301-313` 下游契约 → plan 需要 R 列表、不做清单、影响面、第 6 节决策、第 7 节遗留、附带交付、成本基线七样。
+- 已读：`.agents/skills/sdd-requirement/tools/sdd_lint.py:36-90` 形状常量 → 新脚本沿用"常量 + 解析 + 结果容器 + 分节检查 + 入口"的分段，退出码 0/1/2。
 - 已读：`docs/sdd-thinks/04-decisions.md:83` Q4 → `plan.md` 的任务块字段与自检矩阵形状原本是未决项，本 spec 定案。
 - 已读：`docs/kiro-spec/02-spec-design.md`、`03-spec-tasks.md` → Kiro 的三份文档 + `(P)` / `_Depends_` / `_Test profile` 面向多 Agent 并行分派。
 - 已读：`specs/p00-001-schema-tables-page/spec.md:99-129` → 11 条 R、§5 十二条"不做"、§6 十三条决策；其中"依赖：只用 Flutter 内置组件"与 `shadcn_flutter` 取向直接冲突，是本 spec R8 的真实来源。
-- 已读：`specs/p00-002-lightweight-sdd-grill/grill.md` → 成本表与覆盖矩阵的写法、审批凭据已移除。
+- 已读：`specs/p00-002-lightweight-sdd-requirement/grill.md` → 成本表与覆盖矩阵的写法、审批凭据已移除。
 - 已读：`docs/standards/coding.md:298-303` FSD-12 → 第三方依赖白名单写死，新增依赖必须先在 spec 第 6 节记录决策；`docs/standards/` 下没有 UI 规范。
 - 已读：`steering.md:9-16` 索引 → 只有 `project.md` 与 `coding.md` 存在，测试策略、架构设计、技术专题均为「待建」。
 - 已读：`docs/standards/ui.md:v1` → UI-01 规定唯一组件库为 shadcn_flutter，与 `p00-001` 第 6 节"只用内置组件"构成上下位冲突，是 Q8 的来源。
@@ -77,7 +77,7 @@ A: 要。执行可能中断，`- [ ]` 支持从断点续做，也让 `plan_lint.
 → R6 / §6
 
 Q8 约束冲突怎么解？一律中断补约定，还是按层覆盖？
-A: 按层覆盖，越具体越优先：本次实现特例 > spec 第 4/6 节 > `docs/standards/*`。标 `覆盖` + 写明被覆盖条款 + 决策表给理由与失效条件；只有 plan 想推翻 spec 的 R 或第 6 节决策时才回 `sdd-grill`。
+A: 按层覆盖，越具体越优先：本次实现特例 > spec 第 4/6 节 > `docs/standards/*`。标 `覆盖` + 写明被覆盖条款 + 决策表给理由与失效条件；只有 plan 想推翻 spec 的 R 或第 6 节决策时才回 `sdd-requirement`。
    放弃："规范与 spec 打架一律中断，先补约定"——把正常的上下位关系当成异常，`p00-001` 这种本次特例会被迫改规范。
    何时重新评估：覆盖条目长期不重评时，说明规范本身该改。
 → R8 / §6
@@ -98,18 +98,18 @@ A: 不记。头部只有 `Spec` 与 `Status`；回滚写在风险表的「应对
 
 | ID | 来源决定 | 触发条件 |
 |---|---|---|
-| FUP-002 | Q2 / Q8：`ui.md` 已补齐，尚欠 FSD-12 白名单与 `p00-001` §6 的同步 | `p00-001` 进入计划阶段前，或任何涉及 UI 组件库的 spec 启动 `sdd-grill` 时 |
+| FUP-002 | Q2 / Q8：`ui.md` 已补齐，尚欠 FSD-12 白名单与 `p00-001` §6 的同步 | `p00-001` 进入计划阶段前，或任何涉及 UI 组件库的 spec 启动 `sdd-requirement` 时 |
 
 ## 覆盖矩阵
 
 | 维度 | 状态 | 依据 |
 |---|---|---|
 | D1 失败与部分失败 | 已覆盖 | R1、R7、R8：spec 未批准或第 7 节有遗留时停下；lint FAIL 不许用文字绕过；约束来源缺失时停为 `draft` |
-| D2 边界与既有行为 | 已覆盖 | R1、§5：只新增 `sdd-plan` 一格，不改 `sdd-grill` 闸门与 `sdd_lint.py`；spec 仍是唯一需求来源 |
+| D2 边界与既有行为 | 已覆盖 | R1、§5：只新增 `sdd-plan` 一格，不改 `sdd-requirement` 闸门与 `sdd_lint.py`；spec 仍是唯一需求来源 |
 | D3 空与极值 | 已覆盖 | R3、R5：单条 R 的 spec 也要有任务与验证；问题数为 0 时摘要写「无需你拍板」 |
 | D4 并发与顺序 | 已覆盖 | R5：摘要未确认前第 3–6 节必须为空，顺序由 `plan_lint.py` 的 L02 拦住；单人串行，不引入并发写入 |
 | D5 权限与密钥 | 不适用 | 本流程只读写仓库内 Markdown 与脚本，不接触连接串、密码或外部服务 |
 | D6 可逆性 | 已覆盖 | R9、§6：spec 变更后 `plan.md` 标 `stale`；方案被推翻时回到 `draft` 重跑，删除 `plan.md` 不影响已完成实现 |
 | N1 首版边界 | 已覆盖 | §5：不建 UI 规范、不生成三份中间文档、不做并行标记与状态机 |
 | N2 用户与场景 | 已覆盖 | §1–3：用户只在方案摘要处表态一次，其余由 Agent 自检；场景 B 覆盖规范冲突 |
-| N3 与既有能力的关系 | 已覆盖 | R1、R2：消费 `sdd-grill` 的下游契约七项；沿用 `steering.md` 索引制与 `sdd_lint.py` 的脚本形态 |
+| N3 与既有能力的关系 | 已覆盖 | R1、R2：消费 `sdd-requirement` 的下游契约七项；沿用 `steering.md` 索引制与 `sdd_lint.py` 的脚本形态 |

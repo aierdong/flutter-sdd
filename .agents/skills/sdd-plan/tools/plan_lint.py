@@ -1098,7 +1098,7 @@ def check_spec_pending(rep: Report, spec_text: str) -> None:
     section7 = sections.get(7, '')
     body = _COMMENT.sub('', section7)
     if re.search(r'^\d+\.\s+', body, re.MULTILINE):
-        rep.fail('L09', 'spec.md 第 7 节还有待决问题——阶段 0 就该停下，回 sdd-grill')
+        rep.fail('L09', 'spec.md 第 7 节还有待决问题——阶段 0 就该停下，回 sdd-requirement')
     else:
         rep.ok('L09')
 

@@ -1,6 +1,6 @@
 ---
-name: sdd-grill-dimensions
-description: sdd-grill 的访谈清单，包括三种需求类型的必问维度、通用问题、覆盖矩阵和追问示例。
+name: sdd-requirement-dimensions
+description: sdd-requirement 的访谈清单，包括三种需求类型的必问维度、通用问题、覆盖矩阵和追问示例。
 ---
 
 # 访谈维度

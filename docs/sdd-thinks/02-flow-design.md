@@ -51,7 +51,7 @@ Agent 生成执行区前先校验：该 commit 之后审阅区内容未变
 
 - **Agent 不得创建、不得修改、不得代签批准 commit。**
 - 审阅区内容一变，旧批准立即失效，旧 `plan.md` 标 `stale`，实现入口拒绝执行。
-- 改的是原 spec 还是新开一个 spec，必须问人，不替人决定（见 `03-sdd-grill.md`）。
+- 改的是原 spec 还是新开一个 spec，必须问人，不替人决定（见 `03-sdd-requirement.md`）。
 
 ## `R#` 编号：规格里唯一强制结构
 
@@ -100,7 +100,7 @@ Agent 生成执行区前先校验：该 commit 之后审阅区内容未变
 
 | 阶段 | 输入 | 产出 | 通过条件 |
 |---|---|---|---|
-| `sdd-grill` | 一条需求描述 | `spec.md`（第 1–7 节）+ `grill.md` | 人批准，`Status: approved` + 批准凭据 |
+| `sdd-requirement` | 一条需求描述 | `spec.md`（第 1–7 节）+ `grill.md` | 人批准，`Status: approved` + 批准凭据 |
 | `sdd-plan` | 已批准的 `spec.md` | `plan.md` | 每条 R 都有设计、任务与验证；无待决问题；自检矩阵通过 |
 | `sdd-impl` | 有效 `plan.md` | 代码、测试、命令输出 | plan 中每个任务的验证通过 |
 | `sdd-review` | 全部产物 | `review.md` | 结论有证据；不通过则回到最靠前的失效步骤 |

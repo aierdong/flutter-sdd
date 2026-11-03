@@ -21,7 +21,7 @@
 **方案**（四段流程，一个 spec 只解决一个问题）：
 
 ```text
-sdd-grill   →  spec.md + grill.md   审阅区，人批准
+sdd-requirement   →  spec.md + grill.md   审阅区，人批准
      ↓
 sdd-plan    →  plan.md              第 1–2 节人读（闸门），第 3–6 节机器执行
      ↓
@@ -35,13 +35,13 @@ sdd-review  →  review.md            结论
 | 部分 | 状态 |
 |---|---|
 | 四段流程的骨架 | 已定（`AGENTS.md`） |
-| `sdd-grill` 设计 | 已定，草案在 `../kiro-spec/skills/sdd-grill/` |
+| `sdd-requirement` 设计 | 已定，草案在 `../kiro-spec/skills/sdd-requirement/` |
 | `spec.md` 模板 | 已定，草案在 `../kiro-spec/templates/spec.md` |
 | `sdd-plan` / `sdd-impl` / `sdd-review` | 未设计 |
 | 检查脚本（证据复用） | 有 Go 版原型，需移植到 Flutter |
 | 第一个 spec | 未开始 |
 
-**下一步**：先跑一次 `sdd-grill`，把「连接 → 树 → 表详情」拆成可独立验收的 spec，用真实访谈验证模板能不能支撑判断。
+**下一步**：先跑一次 `sdd-requirement`，把「连接 → 树 → 表详情」拆成可独立验收的 spec，用真实访谈验证模板能不能支撑判断。
 
 ## 文件索引
 
@@ -49,7 +49,7 @@ sdd-review  →  review.md            结论
 |---|---|---|
 | `01-diagnosis.md` | 起点、Kiro 的机制与代价、为什么"文档不是给人读的"是核心 | 想重新审视问题定义时 |
 | `02-flow-design.md` | 自建流程的设计：双视角、审批、四段、产物契约、成本策略 | 决定"要不要这么做"时 |
-| `03-sdd-grill.md` | 访谈技能：三型需求、必问维度、闸门、下游契约 | 写/改 `sdd-grill` 时 |
+| `03-sdd-requirement.md` | 访谈技能：三型需求、必问维度、闸门、下游契约 | 写/改 `sdd-requirement` 时 |
 | `04-decisions.md` | 决策台账、被推翻的方案、已核实事实、教训、未决问题 | 接手任何一部分前 |
 | `05-next-steps.md` | 新仓库适配清单、首个 spec 的拆分、接下来的顺序 | 开工前 |
 

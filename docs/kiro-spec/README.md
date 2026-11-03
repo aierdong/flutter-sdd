@@ -45,7 +45,7 @@ Kiro 的 skill 文本是写给 Agent 执行的，句法压缩、术语密集、�
 新流程是一条独立的轻量 SDD，只借鉴 Kiro 中经受住检验的部分，不继承它的文档结构：
 
 ```text
-sdd-grill   →  spec.md   审阅区：干什么、为什么、做成什么样、不做什么（人批准）
+sdd-requirement   →  spec.md   审阅区：干什么、为什么、做成什么样、不做什么（人批准）
      ↓
 sdd-plan    →  plan.md   执行区：改哪里、按什么契约、怎样验证、边界在哪
      ↓
@@ -58,11 +58,11 @@ sdd-review  →  证据与结论
 
 | 文件 | 用途 |
 |---|---|
-| `skills/sdd-grill/SKILL.md` | 需求访谈：先分型（新建 / 增量 / 修正），再一次一问问透，产出 `spec.md` 第 1–6 节与决策日志 |
-| `skills/sdd-grill/rules/dimensions.md` | 三种类型各自的必问维度、通用六维度问题库、覆盖矩阵、追问话术 |
+| `skills/sdd-requirement/SKILL.md` | 需求访谈：先分型（新建 / 增量 / 修正），再一次一问问透，产出 `spec.md` 第 1–6 节与决策日志 |
+| `skills/sdd-requirement/rules/dimensions.md` | 三种类型各自的必问维度、通用六维度问题库、覆盖矩阵、追问话术 |
 | `templates/spec.md` | `spec.md` 审阅区模板（第 1–7 节，`R#` 编号，含 `上游` 字段） |
 
-这三个文件按未来 skill 目录的结构摆放：`skills/sdd-grill/` 是自包含的 skill（`SKILL.md` + `rules/`），`templates/spec.md` 留在仓库级模板目录，将来由 `sdd-grill`、`sdd-plan` 共用。迁移时整棵 `docs-zh/kiro-spec` 一起搬，skill 内部只用相对路径引用，不需要改写链接。
+这三个文件按未来 skill 目录的结构摆放：`skills/sdd-requirement/` 是自包含的 skill（`SKILL.md` + `rules/`），`templates/spec.md` 留在仓库级模板目录，将来由 `sdd-requirement`、`sdd-plan` 共用。迁移时整棵 `docs-zh/kiro-spec` 一起搬，skill 内部只用相对路径引用，不需要改写链接。
 
 ## 阅读顺序建议
 
