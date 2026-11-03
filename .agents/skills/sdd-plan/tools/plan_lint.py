@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """检查 sdd-plan 计划的格式和可直接判断的内容。
 
-方案确认（A）：第 1–2 节完成，lint 和按类型要求的独立核查完成后，
-用户明确同意才能写第 3–6 节。fix 可跳独立核查，但要说明理由。
-开工确认（B）：整份计划完成，所有类型都要独立核查、记录并重跑 lint，
-用户明确允许后才能实现。脚本不代替独立核查或用户批准。
+方案确认（A）：主 Agent 完成第 1–2 节、运行 lint（格式和部分规则校验），
+并完成所需独立核查后，请用户决定是否接受方案。用户同意后，主 Agent 才写第 3–6 节。
+开工确认（B）：主 Agent 完成整份计划并记录实际核查范围，请用户决定是否进入实现。
+首轮未改正文时，主 Agent 沿用首次 lint 结果；修改后的核查通过时，主 Agent 才运行最终 lint。
+到达核查上限或最终 lint 失败时，主 Agent 停止。用户明确允许后，Agent 才能进入实现。
+审阅只覆盖明确列出的范围，lint 通过不保证语义正确，也不代替用户批准。
+Agent 使用字段列表填写计划，并用四级标题分隔记录。
 
 用法：
     python3 .agents/skills/sdd-plan/tools/plan_lint.py <spec 目录>
@@ -14,19 +17,19 @@
     L01  头部两项齐全、无版本控制字段；Spec 可解析且与目录名一致；spec 版本与状态对得上 plan 的声明
     L02  第 1–6 节结构；Status=draft 时第 3–6 节必须为空（方案尚未确认）
     L03  方案摘要非空、不超过 30 行、有「需要用户决定的事项」或「无需用户决定」
-    L04  第 2 节两张表：2.1 需要用户确认的例外（三格、去向合法、覆盖写明条款）、2.2 Agent 遵循的既有规范（每条有真实出处；
+    L04  第 2 节两组记录：2.1 需要用户确认的例外（三字段、去向合法、覆盖写明条款）、2.2 Agent 遵循的既有规范（每条有真实出处；
          引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
     L05  任务：编号连续、四行齐全、验证可执行；依赖只指前面的任务；改动不越 3.3 清单
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态只能 draft；design-ok / approved 时第 3–6 节及设计子节完整，
-         风险表与对证记录存在，且「覆盖」必须对应带失效条件的决策；不判语义通过
+         风险记录与对证记录存在，且「覆盖」必须对应带失效条件的决策；不判语义通过
     L09  spec 第 7 节还有待决项时，plan 不得存在
     L10  人读区：第 1 节有「用户会看到的变化」、无裸维度 ID、拍板项是问句或指向 2.1；
          2.1 的「为什么」一句话、不超字数
-    L11  可见面：第 1 节「覆盖核对」表覆盖 spec 每条 R，落点引文能在「用户会看到的变化」里逐字找到
+    L11  可见面：第 1 节「覆盖核对」记录覆盖 spec 每条 R，落点引文能在「用户会看到的变化」里逐字找到
 
-只检查格式和能直接判断的内容。方案是否合适、任务拆分是否合理，仍需独立核查。
+只检查格式和能直接判断的内容。方案与任务语义需在明确范围内独立审阅，不保证穷尽。
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
 
 脚本随本 skill 分发，纯标准库、Python 3.8+，不依赖被审项目的语言、框架或构建系统。
@@ -97,12 +100,12 @@ QUALIFIER_PATTERNS = (re.compile(r'除[^。；]{0,24}(?:外|之外)'),)
 # 写成「确认……。」的结论句时，用户只有"同意"一个动作，闸门退化成确认框。
 PITCH_POINTER = '见 2.1'
 
-# 第 1 节末尾的「覆盖核对」表：spec 每条 R 落到「用户会看到的变化」的哪一句。
+# 第 1 节末尾的「覆盖核对」记录：spec 每条 R 落到「用户会看到的变化」的哪一句。
 # 它和第 5 节的 `R → 验证` 同构：一个核"怎么做得到"，一个核"人看不看得见"。
 # 只核存在性与引文可查；引文和 R 说的是不是一回事，脚本判不了。
 _SEEN_HEAD = '覆盖核对'
 _SEEN_TABLE = re.compile(r'\*\*%s\*\*[^\n]*\n(?:[ \t]*\n)*((?:[ \t]*\|[^\n]*\n)+)' % _SEEN_HEAD)
-# 新计划使用首个名称；其余名称只用于兼容不回写的旧计划。
+# 模板使用首个名称；解析器接受本组列出的节标题。
 _VISIBLE_HEADS = ('用户会看到的变化', '你会看到什么')
 _PITCH_HEADS = ('需要用户决定的事项', '需要你拍板')
 _NO_PITCH_HEADS = ('无需用户决定', '无需你拍板')
@@ -199,10 +202,28 @@ def key_value_rows(text: str) -> Dict[str, str]:
     return out
 
 
-def header_fields(text: str) -> Dict[str, str]:
-    """取 `## 1.` 之前的头部表格。"""
+def header_fields(text: str, rep=None) -> Dict[str, str]:
+    """读取计划头部字段。"""
     cut = text.find('\n## 1.')
-    return key_value_rows(text if cut < 0 else text[:cut])
+    text = _COMMENT.sub('', text if cut < 0 else text[:cut])
+    out = key_value_rows(text)
+    seen = set()
+    for line in text.splitlines():
+        match = _ROW2.match(line)
+        field = re.match(r'^-\s+([^：:]+)[：:]\s*(.*)$', line)
+        if field:
+            key, value = clean_cell(field[1]), clean_cell(field[2])
+        elif match:
+            key, value = clean_cell(match[1]), clean_cell(match[2])
+            if key not in HEAD_FIELDS + FORBIDDEN_HEAD:
+                continue
+        else:
+            continue
+        if key in seen and rep is not None:
+            rep.fail('L01', '头部字段「%s」重复' % key)
+        seen.add(key)
+        out[key] = value
+    return out
 
 
 def split_sections(text: str) -> Dict[int, str]:
@@ -268,6 +289,71 @@ def grid_rows(section: str) -> List[List[str]]:
             continue
         rows.append(cells)
     return rows[1:] if rows else rows
+
+
+def record_rows(section: str, fields: Tuple[str, ...], rep=None, code='L04') -> List[List[str]]:
+    """把记录直接解析为有序值，不序列化为表格；管道和反引号均保留。"""
+    section = _COMMENT.sub('', section)
+    marks = list(re.finditer(r'^####[ \t]+([^\n]+)', section, re.MULTILINE))
+    if not marks:
+        if re.search(r'^-\s+(?:%s)[：:]' % '|'.join(map(re.escape, fields)), section, re.MULTILINE):
+            if rep is not None:
+                rep.fail(code, '字段记录缺少「#### 标题」')
+            return []
+        return grid_rows(section)
+    if re.search(r'^-\s+[^：:\n]+[：:]', section[:marks[0].start()], re.MULTILINE) and rep is not None:
+        rep.fail(code, '首条字段记录缺少「#### 标题」')
+    if '|' in section[:marks[0].start()]:
+        if grid_rows(section[:marks[0].start()]) and rep is not None:
+            rep.fail(code, '同一区域不要混用表格和字段记录')
+    rows: List[List[str]] = []
+    for index, mark in enumerate(marks):
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(section)
+        values: Dict[str, str] = {}
+        current = None
+        for line in section[mark.end():end].splitlines():
+            if line.startswith('**'):
+                break
+            match = re.match(r'^-\s+([^：:]+)[：:][ \t]*(.*)$', line)
+            if match:
+                key, value = match.groups()
+                if key not in fields:
+                    if rep is not None:
+                        rep.fail(code, '记录「%s」有未知字段「%s」' % (mark[1], key))
+                    current = None
+                    continue
+                if key in values and rep is not None:
+                    rep.fail(code, '记录「%s」字段「%s」重复' % (mark[1], key))
+                values[key] = value.strip()
+                current = key
+            elif line.startswith(('  ', '\t')) and current is not None:
+                values[current] += '\n' + line.strip()
+            elif line.strip() and rep is not None:
+                rep.fail(code, '记录「%s」有无法解析的行：%s' % (mark[1], line.strip()))
+        for field in fields:
+            if not values.get(field, '').strip() and rep is not None:
+                rep.fail(code, '记录「%s」缺少非空字段「%s」' % (mark[1], field))
+        rows.append([values.get(field, '') for field in fields])
+    return rows
+
+
+def seen_block(section: str) -> Optional[str]:
+    """覆盖核对由独立粗体标题引入，遇到下一个粗体标题结束。"""
+    hit = re.search(r'^\*\*覆盖核对\*\*[^\n]*\n(.*?)(?=^\*\*|\Z)', section, re.MULTILINE | re.DOTALL)
+    return hit[1] if hit else None
+
+
+def without_seen(section: str) -> str:
+    block = seen_block(section)
+    return section.replace(block, '') if block is not None else section
+
+
+AGREE_FIELDS = ('这次要打破什么', '为什么', '什么时候回到标准')
+FOLLOW_FIELDS = ('出处', '条款', '要求')
+DECISION_FIELDS = ('决策', '选择', '放弃', '理由', '来源', '何时重评')
+FILE_FIELDS = ('文件', '操作', '职责')
+COVERAGE_FIELDS = ('R', '任务', '自动验证', '手工步骤')
+RISK_FIELDS = ('风险', '触发信号', '应对')
 
 
 def task_blocks(section: str) -> List[Tuple[int, str]]:
@@ -337,7 +423,7 @@ def check_head(rep: Report, plan_dir: str, head: Dict[str, str], spec_head: Dict
         if key in head:
             rep.fail(
                 'L01',
-                'plan.md 头部不要写「%s」；头部只记录 Spec 和 Status，回滚步骤写在风险表的「应对」里' % key,
+                'plan.md 头部不要写「%s」；头部只记录 Spec 和 Status，回滚步骤写在风险记录的「应对」里' % key,
             )
 
     rep.status = head.get('Status', '')
@@ -390,9 +476,9 @@ def check_structure(rep: Report, text: str, sections: Dict[int, str]) -> None:
 def check_summary(rep: Report, section: str) -> None:
     """L03 方案摘要：非空、不超行、有拍板栏。
 
-    摘要正文最多 30 行；「覆盖核对」表用于自检，不计入。
+    摘要正文最多 30 行；「覆盖核对」记录用于自检，不计入。
     """
-    lines = body_lines(_SEEN_TABLE.sub('', section))
+    lines = body_lines(without_seen(section))
     if not lines:
         rep.fail('L03', '第 1 节方案摘要是空的')
         return
@@ -405,16 +491,16 @@ def check_summary(rep: Report, section: str) -> None:
 
 
 def check_constraints(rep: Report, section: str, plan_dir: str) -> None:
-    """L04 第 2 节两张表：2.1 给用户（一条一个决定），2.2 给 Agent（既有规范，按主题合并）。
+    """L04 第 2 节两组记录：2.1 给用户（一条一个决定），2.2 给 Agent（既有规范，按主题合并）。
 
     分开写、分开校验，避免日常执行要求淹没需要用户决定的例外。
     """
     subs = split_subsections(section)
     agree, follow = subs.get('2.1'), subs.get('2.2')
     if agree is None:
-        rep.fail('L04', '第 2 节缺「### 2.1 需要用户确认的例外」——用户只需审阅例外表，它必须单独存在')
+        rep.fail('L04', '第 2 节缺「### 2.1 需要用户确认的例外」——用户只需审阅例外记录，它必须单独存在')
     if follow is None:
-        rep.fail('L04', '第 2 节缺「### 2.2 Agent 遵循的既有规范」——既有规范不要和需要用户确认的例外挤在一张表里')
+        rep.fail('L04', '第 2 节缺「### 2.2 Agent 遵循的既有规范」——既有规范不要和需要用户确认的例外混在一组记录里')
     if agree is None or follow is None:
         return
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(plan_dir)))
@@ -439,7 +525,7 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> se
     返回被覆盖的条款 ID 集合，交给 2.2 做交叉核对。
     """
     overridden = set()
-    rows = grid_rows(section)
+    rows = record_rows(section, AGREE_FIELDS, rep)
     for number, cells in enumerate(rows, 1):
         if _is_placeholder('|'.join(cells)):
             continue
@@ -458,7 +544,7 @@ def _check_agree(rep: Report, section: str, repo_root: str, plan_dir: str) -> se
         if target is None:
             rep.fail(
                 'L04',
-                '第 2.1 节第 %d 行没标去向——这里是"需要用户确认的例外"的表，每条都要说明属于哪一种：'
+                '第 2.1 节第 %d 行没标去向——这里是"需要用户确认的例外"的记录，每条都要说明属于哪一种：'
                 '覆盖 / 仅本次 / 回 spec / 先补约定' % number,
             )
         elif target == '既有':
@@ -531,7 +617,11 @@ def _check_follow(
     rep: Report, section: str, repo_root: str, plan_dir: str, overridden: set
 ) -> None:
     """2.2：每条一个主题，出处必须存在。用户可以跳读，但 Agent 得找得到。"""
-    real = [item for item in _follow_items(section) if not _is_placeholder(item)]
+    if re.search(r'^####[ \t]+|^-\s+(?:出处|条款|要求)[：:]', section, re.MULTILINE):
+        items = ['，'.join(row) for row in record_rows(section, FOLLOW_FIELDS, rep)]
+    else:
+        items = _follow_items(section)
+    real = [item for item in items if not _is_placeholder(item)]
     if not real:
         rep.fail('L04', '第 2.2 节没有列出任何既有规范——预研没做，或者约束被塞回了 2.1')
         return
@@ -685,7 +775,7 @@ def check_human(rep: Report, sections: Dict[int, str]) -> None:
             % hit.group(0),
         )
 
-    rows = grid_rows(split_subsections(sections.get(2, '')).get('2.1', ''))
+    rows = record_rows(split_subsections(sections.get(2, '')).get('2.1', ''), AGREE_FIELDS)
     real = [cells for cells in rows if not _is_placeholder('|'.join(cells))]
     if real and any(label in summary for label in _NO_PITCH_HEADS):
         rep.fail(
@@ -738,23 +828,23 @@ def check_visible_map(rep: Report, sections: Dict[int, str]) -> None:
     引文是否准确表达需求，由独立上下文核查，见 rules/crosscheck.md。
     """
     section = _COMMENT.sub('', sections.get(1, ''))
-    block = _SEEN_TABLE.search(section)
+    block = seen_block(section)
     if block is None:
         rep.fail(
             'L11',
-            '第 1 节缺「**覆盖核对**」表——spec 每条 R 都要指出落到「用户会看到的变化」的哪一句。'
-            '没有这张表，漏掉的 R 在人评审时不会显形',
+            '第 1 节缺「**覆盖核对**」记录——spec 每条 R 都要指出落到「用户会看到的变化」的哪一句。'
+            '没有这些记录，漏掉的 R 在人评审时不会显形',
         )
         return
-    para = _VISIBLE_PARA.search(_SEEN_TABLE.sub('', section))
+    para = _VISIBLE_PARA.search(without_seen(section))
     if para is None or not para.group(1).strip():
         rep.fail('L11', '第 1 节找不到「用户会看到的变化」的内容，覆盖核对没有可对照的落点')
         return
     visible = para.group(1)
 
-    rows = grid_rows(block.group(1))
+    rows = record_rows(block, ('R', '落点'), rep, 'L11')
     if not rows:
-        rep.fail('L11', '「覆盖核对」表没有数据行')
+        rep.fail('L11', '「覆盖核对」记录没有数据行')
         return
     seen: Dict[str, int] = {}
     for number, cells in enumerate(rows, 1):
@@ -817,9 +907,14 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
     if not blocks:
         rep.fail('L05', '第 4 节没有任何任务（`- [ ] **T1** ...`）')
         return
-    inventory = grid_rows(split_subsections(design).get('3.3', ''))
+    inventory = record_rows(split_subsections(design).get('3.3', ''), FILE_FIELDS, rep, 'L05')
+    seen_files = set()
     for row in inventory:
         paths = _CHANGE_PATH.findall(row[0]) if row else []
+        for path in paths:
+            if path in seen_files:
+                rep.fail('L05', '第 3.3 节文件 `%s` 重复' % path)
+            seen_files.add(path)
         if not paths or any(not valid_change_path(path) for path in paths):
             rep.fail('L05', '第 3.3 节每行必须用反引号逐个列出规范的仓库相对文件路径')
     files = design_files(design)
@@ -832,7 +927,10 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
         if tid != index:
             rep.fail('L05', '任务编号不连续：第 %d 条是 T%d' % (index, tid))
         for field in TASK_FIELDS:
-            hit = re.search(r'^\s*-\s*%s[：:]\s*(.*)$' % field, block, re.MULTILINE)
+            matches = list(re.finditer(r'^\s*-\s*%s[：:][ \t]*(.*)$' % field, block, re.MULTILINE))
+            hit = matches[0] if matches else None
+            if len(matches) > 1:
+                rep.fail('L05', 'T%d 的「%s」字段重复' % (tid, field))
             if hit is None:
                 rep.fail('L05', 'T%d 缺「- %s：」这一行' % (tid, field))
             elif hit.group(1).strip() in ('', '—', '-'):
@@ -896,7 +994,7 @@ def _check_change(rep: Report, tid: int, value: str, files: set) -> None:
 def design_files(design: str) -> set:
     """第 3.3 节影响文件清单里的路径。"""
     out = set()
-    for cells in grid_rows(split_subsections(design).get('3.3', '')):
+    for cells in record_rows(split_subsections(design).get('3.3', ''), FILE_FIELDS):
         if not cells:
             continue
         for name in _CHANGE_PATH.findall(cells[0]):
@@ -908,7 +1006,7 @@ def design_files(design: str) -> set:
 
 def check_coverage(rep: Report, section5: str, section4: str) -> None:
     """L06 R 覆盖完整、只出现一次、任务号真实、与任务「覆盖」互洽。"""
-    rows = grid_rows(section5)
+    rows = record_rows(section5, COVERAGE_FIELDS, rep, 'L06')
     seen: Dict[str, int] = {}
     for number, cells in enumerate(rows, 1):
         if not cells or not re.fullmatch(r'R\d+', clean_cell(cells[0])):
@@ -917,7 +1015,7 @@ def check_coverage(rep: Report, section5: str, section4: str) -> None:
         rid = clean_cell(cells[0])
         seen[rid] = seen.get(rid, 0) + 1
         if len(cells) != 4:
-            rep.fail('L06', '%s 的验证行必须有 R、任务、自动验证、手工步骤四格' % rid)
+            rep.fail('L06', '%s 的验证记录必须有 R、任务、自动验证、手工步骤四个字段' % rid)
         auto = clean_cell(cells[2]) if len(cells) > 2 else ''
         manual = clean_cell(cells[3]) if len(cells) > 3 else ''
         absent = ('', '—', '-', '无', '不适用')
@@ -951,6 +1049,9 @@ def check_coverage(rep: Report, section5: str, section4: str) -> None:
         claimed = ['R%s' % match.group(1) for match in _R_REF.finditer(hit.group(1))]
         if not claimed:
             rep.fail('L06', 'T%d 的「覆盖」没有列任何 R 编号' % tid)
+        for rid, refs in rep.coverage.items():
+            if tid in refs and rid not in claimed:
+                rep.fail('L06', '第 5 节 %s 指向 T%d，但任务「覆盖」没有列出 %s' % (rid, tid, rid))
         for rid in claimed:
             if tid not in rep.coverage.get(rid, []):
                 rep.fail('L06', 'T%d 声称覆盖 %s，但第 5 节 %s 的验证行没指向 T%d' % (tid, rid, rid, tid))
@@ -974,7 +1075,8 @@ def check_blocking(rep: Report, sections: Dict[int, str]) -> None:
             if not substantive_lines(design.get(key, '')):
                 rep.fail('L08', '%s 时第 %s 节不能为空' % (rep.status, key))
         risks = sections.get(6, '')
-        risk_rows = grid_rows(risks)
+        record_rows(design.get('3.2', ''), DECISION_FIELDS, rep, 'L08')
+        risk_rows = record_rows(risks, RISK_FIELDS, rep, 'L08')
         if not risk_rows or any(len(row) < 3 or any(clean_cell(cell) in ('', '—', '-') or re.fullmatch(r'<[^<>]+>', clean_cell(cell)) is not None for cell in row[:3]) for row in risk_rows):
             rep.fail('L08', '第 6 节必须有风险、触发信号和应对/回滚的非空数据行')
         # 只核记录存在；语义是否通过必须独立对证，不能把这行当作审查证据。
@@ -987,7 +1089,7 @@ def check_blocking(rep: Report, sections: Dict[int, str]) -> None:
 
 def _check_override_decisions(rep: Report, design: str) -> None:
     """第 2 节声明了 `覆盖`，第 3.2 节就得有来源为 `覆盖` 的决策，且失效条件可判断。"""
-    rows = grid_rows(split_subsections(design).get('3.2', ''))
+    rows = record_rows(split_subsections(design).get('3.2', ''), DECISION_FIELDS)
     overrides = [row for row in rows if len(row) > 5 and clean_cell(row[4]) == '覆盖']
     if not overrides:
         rep.fail(
@@ -1064,7 +1166,7 @@ def main(argv=None) -> int:
     sections = split_sections(plan_text)
 
     rep = Report()
-    check_head(rep, args.spec_dir, header_fields(plan_text), header_fields(spec_text))
+    check_head(rep, args.spec_dir, header_fields(plan_text, rep), header_fields(spec_text))
     check_spec_rs(rep, spec_text)
     check_structure(rep, plan_text, sections)
     check_summary(rep, sections.get(1, ''))

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""合法样本与变异回归；测试只在内存中修改计划，不回写磁盘。"""
+"""合法样本与变异回归；测试在内存中修改计划，不修改磁盘文件。"""
 import contextlib
 import importlib.util
 import io
+import re
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -205,6 +206,134 @@ class PlanLintTests(unittest.TestCase):
 
     def test_manual_only_verification_is_legal(self):
         text = self.ready().replace("| `flutter test test/report_test.dart`：跑完同目录出现报告文件。 | — |", "| — | 准备三行输入，以命令入口运行，打开同目录报告确认文件存在。 |")
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def new_format(self, directory=READY):
+        """在内存中将测试样本转换为固定字段记录。"""
+        text = (directory / 'plan.md').read_text(encoding='utf-8')
+        schemas = iter((('Spec', 'Status'), ('R', '落点'), lint.AGREE_FIELDS,
+                        lint.FOLLOW_FIELDS, lint.DECISION_FIELDS, lint.FILE_FIELDS,
+                        lint.COVERAGE_FIELDS, lint.RISK_FIELDS))
+
+        def convert(match):
+            fields = next(schemas)
+            rows = lint.grid_rows(match[0])
+            if fields == ('Spec', 'Status'):
+                return '\n'.join('- %s：%s' % tuple(row) for row in rows) + '\n'
+            records = []
+            for index, row in enumerate(rows, 1):
+                if fields == lint.FOLLOW_FIELDS:
+                    row = ['[docs/standards/coding.md](<../../docs/standards/coding.md>)',
+                           'FSD-01–FSD-03', '三行文件头、需求锚点、镜像测试。']
+                records.append('#### 记录%d\n\n%s\n' % (index, '\n'.join(
+                    '- %s：%s' % pair for pair in zip(fields, row))))
+            return '\n'.join(records)
+
+        text = re.sub(r'^- `docs/standards/coding.md`[^\n]*\n', '', text, flags=re.MULTILINE)
+        return re.sub(r'(?:^\|[^\n]*\n)+', convert, text, flags=re.MULTILINE)
+
+    def test_new_format_positive_states(self):
+        for directory, status in ((DRAFT, 'draft'), (READY, 'design-ok'), (READY, 'approved')):
+            with self.subTest(status=status):
+                text = self.new_format(directory).replace('`design-ok`', '`%s`' % status)
+                code, output = self.run_plan(text, directory)
+                self.assertEqual(code, 0, output)
+
+    def test_new_format_preserves_pipes_backticks_and_continuations(self):
+        text = self.new_format().replace(
+            '- 自动验证：`flutter test test/report_test.dart`：跑完同目录出现报告文件。',
+            '- 自动验证：`flutter test | tee report.log`：跑完同目录出现报告文件。\n'
+            '  同时检查 `report.tsv`，内容包含 a|b。')
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+        rows = lint.record_rows('#### 测试\n- 命令：`a | b`\n  继续 `c|d`\n', ('命令',))
+        self.assertEqual(rows, [['`a | b`\n继续 `c|d`']])
+
+    def test_new_format_missing_and_duplicate_fields(self):
+        for field, value, rule in (
+            ('这次要打破什么', '覆盖 docs/standards/coding.md FSD-04', 'L04'),
+            ('出处', 'docs/standards/coding.md', 'L04'),
+            ('决策', '产物格式', 'L08'), ('文件', '`lib/report.dart`', 'L05'),
+            ('自动验证', '`run | check`', 'L06'), ('风险', '报告不完整', 'L08'),
+            ('落点', '同目录下多出一个', 'L11')):
+            with self.subTest(field=field):
+                text = self.new_format()
+                self.assert_rejected(re.sub(r'^- %s：[^\n]*\n' % field, '', text,
+                                            count=1, flags=re.MULTILINE), rule)
+                self.assert_rejected(text.replace('- %s：' % field,
+                                     '- %s：%s\n- %s：' % (field, value, field), 1), rule)
+
+    def test_new_format_duplicate_header_and_files(self):
+        text = self.new_format()
+        self.assert_rejected(text.replace('- Status：', '- Status：`draft`\n- Status：'), 'L01')
+        self.assert_rejected(text.replace('#### 记录2\n\n- 文件：`test/report_test.dart`',
+                                         '#### 记录2\n\n- 文件：`lib/report.dart`'), 'L05')
+
+    def test_new_format_cross_mapping_still_checked(self):
+        text = self.new_format()
+        self.assert_rejected(text.replace('- 任务：T1', '- 任务：T2'), 'L06')
+        self.assert_rejected(text.replace('- 任务：T1', '- 任务：T1、T2'), 'L06')
+        self.assert_rejected(text.replace('  - 覆盖：R1', '  - 覆盖：R2\n  - 覆盖：R1'), 'L05')
+        self.assert_rejected(text.replace('- 来源：覆盖', '- 来源：Agent 自定'), 'L08')
+        self.assert_rejected(text.replace('FSD-01–FSD-03', 'FSD-01–FSD-04'), 'L04')
+        self.assert_rejected(text.replace('- 落点：同目录下多出一个', '- 落点：与实际显示不一致'), 'L11')
+        self.assert_rejected(text.replace('  - 改动：新建 `lib/report.dart`',
+                                         '  - 改动：新建 `lib/unknown.dart`'), 'L05')
+
+    def test_new_format_unknown_fields_and_missing_record_heading(self):
+        text = self.new_format()
+        self.assert_rejected(text.replace('- 操作：新建', '- 行为：新建', 1), 'L05')
+        self.assert_rejected(text.replace('#### 记录1\n\n- 风险：', '- 风险：'), 'L08')
+        self.assert_rejected(text.replace('#### 记录1\n\n- 出处：', '- 出处：'), 'L04')
+
+    def test_new_format_manual_only_and_no_exception(self):
+        text = self.new_format()
+        text = re.sub(r'^- 自动验证：[^\n]*$', '- 自动验证：—', text, flags=re.MULTILINE)
+        text = text.replace('- 手工步骤：—', '- 手工步骤：运行入口后打开报告，核对文件与两列内容。')
+        start = text.index('#### 记录1', text.index('### 2.1'))
+        end = text.index('### 2.2', start)
+        text = text[:start] + '无。\n\n' + text[end:]
+        text = text.replace('**需要用户决定的事项**：见 2.1 的 1 条。', '**无需用户决定**。')
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def test_actual_template_filled_as_draft(self):
+        text = (TOOLS.parent / 'templates/plan.md').read_text(encoding='utf-8')
+        text = lint._COMMENT.sub('', text)
+        text = text[:text.index('## 3. 设计')] + '\n'.join(
+            '## %d. %s\n' % (number, title) for number, title in (
+                (3, '设计'), (4, '任务'), (5, 'R → 验证'), (6, '风险与回滚')))
+        replacements = {
+            '<spec slug>': 'demo-plan-ready', 'pNN-NNN-<slug>': READY.name,
+            '<默认状态下的具体结果>': '跑一次导入命令，同目录下多出一个 report.tsv。',
+            '<其他状态或操作产生的具体差别>': '第一列是出错的行内容，第二列是失败原因。',
+            '<数据从哪来、谁处理、状态和边界在哪里>': '命令读入并解析记录，结束时写报告。',
+            '<相比放弃的做法，实际减少或增加什么工作>': '全部读完再写出，避免留下半份报告。',
+            '<需要付出什么、哪些只能手工判断>': '需要在内存中保留整份结果。',
+            '<照抄“用户会看到的变化”中的 6–20 字>': '同目录下多出一个',
+            '无 —— 见「代价」段': '第一列是出错的行内容',
+            '<例外名称>': '报告格式',
+            '<覆盖 docs/standards/report.md REPORT-01，或仅本次等>':
+                '覆盖 docs/standards/coding.md FSD-04：使用 TSV',
+            '<具体理由>': '使用方按制表符读取', '<可判断的条件>': '下一个报告需求',
+            '<规范主题>': '文件头', 'docs/standards/<name>.md': 'docs/standards/coding.md',
+            '<条款号>': 'FSD-01–FSD-03', '<本次适用的要求及范围>': '文件头与需求锚点。',
+        }
+        for before, after in replacements.items():
+            text = text.replace(before, after)
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def test_default_decision_plain_item_is_legal(self):
+        text = self.new_format()
+        start = text.index('### 3.2')
+        end = text.index('### 3.3', start)
+        text = text[:start] + '### 3.2 决策\n\n- 默认使用现有命令入口，不增加新取舍。\n\n' + text[end:]
+        exception_start = text.index('#### 记录1', text.index('### 2.1'))
+        exception_end = text.index('### 2.2', exception_start)
+        text = text[:exception_start] + '无。\n\n' + text[exception_end:]
+        text = text.replace('**需要用户决定的事项**：见 2.1 的 1 条。', '**无需用户决定**。')
         code, output = self.run_plan(text)
         self.assertEqual(code, 0, output)
 

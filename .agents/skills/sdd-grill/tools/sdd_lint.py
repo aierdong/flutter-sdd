@@ -13,7 +13,7 @@
     L05  第 5 节每条「不做」带「理由：」
     L06  第 7 节每条待决问题带「维度：<ID>」与 A / B 两个选项；有待决问题不得批准
     L07  头部「附带交付」与 R 上的范畴标记互相登记
-    L08  成本表十一项齐全；预算符合需求类型；追加合法；用量不超过批准额度
+    L08  成本字段十一项齐全；预算符合需求类型；追加合法；用量不超过批准额度
     L09  覆盖矩阵恰好包含本类型必做维度；不适用有理由；待决状态与第 7 节双向对应
     L10  规范触碰清单存在；冲突项不许留在第 7 节
 
@@ -66,7 +66,7 @@ HEAD_STATUS = ('draft', 'approved', 'stale')
 MATRIX_STATUS = ('已覆盖', '不适用', '已推翻并说明', '待决')
 TOUCH_STATUS = ('无冲突', '冲突', '不涉及')
 
-# 成本表必须有十一行，顺序不限，缺一行就 FAIL。
+# 成本字段必须有十一行，顺序不限，缺一行就 FAIL。
 COST_KEYS = (
     '类型',
     '问题数',
@@ -103,22 +103,61 @@ def clean_cell(raw: str) -> str:
     return raw.replace('`', '').strip()
 
 
+def field_pairs(text: str) -> List[Tuple[str, str]]:
+    """读取固定字段行或两列表格；固定字段值中的管道不分割。"""
+    pairs = []
+    for line in _COMMENT.sub('', text).splitlines():
+        match = re.match(r'^-\s+([^：:]+)[：:]\s*(.*)$', line) or _ROW2.match(line)
+        if match:
+            key = clean_cell(match.group(1))
+            if key.replace('-', ''):
+                pairs.append((key, clean_cell(match.group(2))))
+    return pairs
+
+
 def key_value_rows(text: str) -> Dict[str, str]:
-    """收集只有两格的表格行，用于 spec.md 头部表格与 grill.md 的成本表。"""
-    out: Dict[str, str] = {}
-    for line in text.split('\n'):
-        match = _ROW2.match(line)
-        if not match:
-            continue
-        key = clean_cell(match.group(1))
-        if not key.replace('-', ''):
-            continue  # |---|---| 分隔行
-        out[key] = clean_cell(match.group(2))
-    return out
+    """取得字段值；校验入口另行检查重复，避免静默覆盖。"""
+    return dict(field_pairs(text))
+
+
+def check_fields(rep: Report, code: str, text: str,
+                 keys: Tuple[str, ...], label: str) -> Dict[str, str]:
+    fields: Dict[str, str] = {}
+    for key, value in field_pairs(text):
+        if key in fields:
+            rep.fail(code, '%s 重复字段「%s」' % (label, key))
+        fields[key] = value
+    for key in keys:
+        if key not in fields:
+            rep.fail(code, '%s 缺字段「%s」' % (label, key))
+        elif not fields[key]:
+            rep.fail(code, '%s 字段「%s」为空' % (label, key))
+    return fields
+
+
+def record_rows(rep: Report, code: str, section: str,
+                keys: Tuple[str, ...]) -> List[Tuple[str, str, str]]:
+    """读取四级标题记录块；每块字段独立校验。"""
+    section = _COMMENT.sub('', section)
+    marks = list(re.finditer(r'^####[ \t]+(.+)$', section, re.MULTILINE))
+    preamble = section[:marks[0].start()] if marks else section
+    if any(key in keys for key, _ in field_pairs(preamble)):
+        rep.fail(code, '记录字段必须放在「#### <记录标题>」下')
+    rows = []
+    titles = set()
+    for index, mark in enumerate(marks):
+        title = mark.group(1).strip()
+        if title in titles:
+            rep.fail(code, '重复记录标题「%s」' % title)
+        titles.add(title)
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(section)
+        fields = check_fields(rep, code, section[mark.end():end], keys, title)
+        rows.append(tuple(fields.get(key, '') for key in keys))
+    return rows
 
 
 def header_fields(text: str) -> Dict[str, str]:
-    """取 `## 1.` 之前的头部表格。"""
+    """读取 `## 1.` 之前的头部字段。"""
     cut = text.find('\n## 1.')
     return key_value_rows(text if cut < 0 else text[:cut])
 
@@ -201,7 +240,8 @@ def check_spec_path(rep: Report, spec_dir: str, text: str) -> None:
 
 def check_spec(rep: Report, text: str) -> None:
     """头部、七节结构、R 条目、不做清单、第 7 节、附带交付。"""
-    head = header_fields(text)
+    head_text = re.split(r'^## 1\.', text, maxsplit=1, flags=re.MULTILINE)[0]
+    head = check_fields(rep, 'L01', head_text, BASE_HEAD_FIELDS, 'spec.md 头部')
     check_head(rep, head)
     sections = split_sections(text)
     for index in range(1, 8):
@@ -335,11 +375,9 @@ def check_grill(rep: Report, text: str) -> None:
 
 
 def check_cost(rep: Report, text: str) -> None:
-    """L08 成本表十一项齐全、预算与型匹配、追加合法、用量不超授权。"""
-    cost = key_value_rows(text)
-    for key in COST_KEYS:
-        if key not in cost:
-            rep.fail('L08', 'grill.md 成本表缺「%s」' % key)
+    """L08 成本字段十一项齐全、预算与型匹配、追加合法、用量不超授权。"""
+    cost_text = re.split(r'^## ', text, maxsplit=1, flags=re.MULTILINE)[0]
+    cost = check_fields(rep, 'L08', cost_text, COST_KEYS, 'grill.md 成本字段')
 
     grill_type = cost.get('类型', '')
     if grill_type != rep.spec_type:
@@ -384,7 +422,7 @@ def check_cost(rep: Report, text: str) -> None:
 
     for key in ('开始', '结束'):
         if cost.get(key, '') in ('', '—'):
-            rep.fail('L08', 'grill.md 成本表「%s」未填，成本基线无法比较' % key)
+            rep.fail('L08', 'grill.md 成本字段「%s」未填，成本基线无法比较' % key)
     start, finish = cost.get('开始', ''), cost.get('结束', '')
     if start and finish and start > finish:
         rep.fail('L08', 'grill.md 结束时间早于开始时间')
@@ -422,8 +460,16 @@ def check_matrix(rep: Report, text: str) -> None:
     if section is None:
         rep.fail('L09', 'grill.md 缺「## 覆盖矩阵」一节')
         return
-    for row in table_rows(section, r'[A-Z]\d'):
-        dim, status, basis = row.group(1), clean_cell(row.group(2)), clean_cell(row.group(3))
+    rows = record_rows(rep, 'L09', section, ('维度', '状态', '依据'))
+    rows.extend((row.group(1), clean_cell(row.group(2)), clean_cell(row.group(3)))
+                for row in table_rows(section, r'[A-Z]\d'))
+    for raw_dim, status, basis in rows:
+        match = re.match(r'^([A-Z]\d)(?:\s|$)', raw_dim)
+        dim = match.group(1) if match else raw_dim
+        if not match:
+            rep.fail('L09', '覆盖矩阵维度「%s」必须以维度 ID 开头' % raw_dim)
+        if dim in rep.matrix_status:
+            rep.fail('L09', '覆盖矩阵重复记录维度 %s' % dim)
         rep.matrix_status[dim] = status
         if status not in MATRIX_STATUS:
             rep.fail('L09', '%s 的状态「%s」不在 %s 内' % (dim, status, ' / '.join(MATRIX_STATUS)))
@@ -452,14 +498,21 @@ def check_touch(rep: Report, text: str) -> None:
     if section is None:
         rep.fail('L10', 'grill.md 缺「## 规范触碰」一节（没有触碰也要写「无」）')
         return
-    rows = table_rows(section, STANDARDS_ID)
+    rows = record_rows(rep, 'L10', section, ('条款', '状态', '依据'))
+    rows.extend((row.group(1), clean_cell(row.group(2)), clean_cell(row.group(3)))
+                for row in table_rows(section, STANDARDS_ID))
     placeholders = _placeholder_rows(section)
     if placeholders:
         rep.fail('L10', '「规范触碰」还有 %d 行未填写的模板占位，请填写或删除' % placeholders)
     if not rows and not placeholders and not _says_none(section):
         rep.fail('L10', '「规范触碰」清单为空，且没有写「无」')
-    for row in rows:
-        code, status, basis = row.group(1), clean_cell(row.group(2)), clean_cell(row.group(3))
+    seen = set()
+    for code, status, basis in rows:
+        if not re.fullmatch(STANDARDS_ID, code):
+            rep.fail('L10', '规范条款编号「%s」无效或仍是占位' % code)
+        if code in seen:
+            rep.fail('L10', '规范触碰重复记录条款 %s' % code)
+        seen.add(code)
         if status not in TOUCH_STATUS:
             rep.fail('L10', '%s 的状态「%s」不在 %s 内' % (code, status, ' / '.join(TOUCH_STATUS)))
         if status == '冲突' and '§7' in basis:
@@ -470,7 +523,9 @@ def check_touch(rep: Report, text: str) -> None:
 def _placeholder_rows(section: str) -> int:
     """首格还带尖括号的表格行数，即模板占位没填。"""
     count = 0
-    for line in section.split('\n'):
+    for line in _COMMENT.sub('', section).split('\n'):
+        if not line.lstrip().startswith('|'):
+            continue
         cells = line.split('|')
         if len(cells) > 2 and '<' in cells[1]:
             count += 1
