@@ -83,7 +83,8 @@ COST_KEYS = (
 
 _ROW2 = re.compile(r'^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*$')
 _SECTION = re.compile(r'^## (\d)\. .*$', re.MULTILINE)
-_R_MARK = re.compile(r'^-\s*\[[ xX]\]\s*\*\*R(\d+)\*\*', re.MULTILINE)
+# 需求条目不带勾选框。行首可选的 `[ ]` 仅为兼容旧 spec 保留，新文档不写。
+_R_MARK = re.compile(r'^-\s*(?:\[[ xX]\]\s*)?\*\*R(\d+)\*\*', re.MULTILINE)
 _PENDING_ITEM = re.compile(r'^\d+\.\s+', re.MULTILINE)
 _PENDING_DIM = re.compile(r'维度[：:]\s*`?([A-Z]\d)')
 _SCOPE_TAG = re.compile(r'\*\*范畴\*\*[：:]\s*([a-z]+)')
