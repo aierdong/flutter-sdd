@@ -1,15 +1,19 @@
-# Flutter 代码规范（可审计版）
+# Flutter 代码规范
 
 | 字段 | 值 |
 |---|---|
-| 版本 | v3 |
+| 版本 | v4 |
 | 状态 | 生效 |
 | 适用 | `lib/**`、`test/**`、`analysis_options.yaml` |
-| 目的 | 约束写法，并让“是否遵守”能用命令、diff 和测试结果判定 |
+| 目的 | 约束代码本身写成什么样：文件与目录、命名、依赖方向、失败模型、日志与禁止用法 |
 
-## 为什么是“可审计”的
+## 范围
 
-普通代码规范只能靠读代码判断，容易退化成“看起来还行”。本规范要求每条需求在代码里留下痕迹，把“遵守”变成一条可以逐环检查的链路：
+本文件只规定代码本身长什么样。代码怎么产生、要不要验证、按什么顺序交付，属于执行计划与实现阶段的职责，本文件不涉及。
+
+## 为什么要求留追踪令牌
+
+需求与代码只靠一个键关联：`pNN-NNN/Rn`。同一个键必须出现在四个位置：
 
 ```text
 spec 第 4 节 R1
@@ -18,9 +22,9 @@ spec 第 4 节 R1
   → 提交正文 R: p00-001/R1
 ```
 
-任一环缺失，审计都能定位到具体文件和规则。因此每条规则都必须留下**唯一、可检索、难以碰巧满足**的产物，而不是“注意命名”“保持简洁”这类无法判定的要求。
+任一位置缺失，需求与代码就对不上。因此每条规则都要求留下**唯一、可检索、难以碰巧满足**的代码痕迹，而不是“注意命名”“保持简洁”这类无法判定的要求。
 
-本规范没有建议项。下列条款全部强制，任一不通过即判不合规。唯一例外是文中明确写出的“条件适用”和“豁免”。
+本规范没有建议项。下列条款全部强制。唯一例外是文中明确写出的“条件适用”和“豁免”。
 
 ## 0. 术语
 
@@ -103,8 +107,8 @@ testWidgets('[p00-001/R4] 刷新失败时显示错误码', (tester) async {
 });
 ```
 
-- 令牌必须与 `test(` / `testWidgets(` 写在同一行的第一个参数里，便于机械检查；`group()` 名称不得带令牌。
-- 每条 R 至少有一个通过的测试；`[support]` 只能出现在 `spec: support` 的测试文件里。
+- 令牌必须与 `test(` / `testWidgets(` 写在同一行的第一个参数里，便于检索；`group()` 名称不得带令牌。
+- `[support]` 只能出现在 `spec: support` 的测试文件里。
 - 禁止 `skip:`、`tags: 'skip'` 和被注释掉的测试。
 - 测试替身手写，命名 `FakeXxx` 或 `StubXxx`。
 
@@ -123,8 +127,6 @@ R: p00-001/R1, p00-001/R2
 - 标题正则：`^p\d{2}-\d{3}: .+`；一个提交只属于一个 spec。
 - 正文必须有一行以 `R: ` 开头，列出本提交触及的令牌，升序、用 `", "` 分隔。
 - 纯文档、流程、脚手架提交使用 `docs:`、`chore:`、`ci:`、`build:` 前缀，不受本节约束；这类提交不得改动 `lib/` 或 `test/`。
-
-未产生提交时，审计记为“不适用”，并写明原因。
 
 ### FSD-05 目录与文件命名
 
@@ -160,7 +162,7 @@ test/
 - `lib/core/**` 只允许 `errors/`、`logging/`、`config/`、`theme/` 四个子目录；不得新增 `utils/`、`helpers/`、`common/`。
 - 根目录除 `main.dart`、`app.dart` 外不得出现其它 `.dart` 文件。
 - 文件名与目录名统一 snake_case；不使用 `lib/features/`、`lib/screens/`、`lib/widgets/` 这类第二套分层。
-- 脚手架生成的计数器页面和 `test/widget_test.dart` 必须在首个 spec 交付前删除或替换。
+- 仓库里不得保留脚手架生成的计数器页面，也不得保留与之配套的 `test/widget_test.dart`。
 
 ### FSD-06 依赖方向
 
@@ -200,7 +202,7 @@ import 'package:flutter/material.dart'; // 违反：controller 只使用 foundat
 | 失败 | 只用 `AppFailure`，不派生其它异常类型 | `AppFailure` |
 | 测试替身 | `Fake*` 或 `Stub*` | `FakeSchemaRepository` |
 
-- 数据库元数据类必须带 `Pg` 前缀：Flutter 自带 `Table`、`Column` 等同名组件，不加前缀会混淆，审计时也无法一眼区分领域模型和 UI 组件。
+- 数据库元数据类必须带 `Pg` 前缀：Flutter 自带 `Table`、`Column` 等同名组件，不加前缀会混淆，读代码时无法一眼区分领域模型和 UI 组件。
 - 领域词与 PostgreSQL 文档一致，不使用 `Dataset`、`ResultSet` 替代 `PgSchema`、`PgTable`。
 - 文件名与主类名一致：`browser_page.dart` → `BrowserPage`。
 
@@ -223,7 +225,7 @@ final class AppFailure implements Exception {
 - 业务代码只抛 `AppFailure`；禁止 `throw Exception(...)`、`throw StateError(...)`、`throw ArgumentError(...)`。编程错误用 `assert`。
 - 禁止无类型的 `catch (e)`；禁止空 catch。每个 catch 必须映射成带错误码的 `AppFailure` 并记录日志，或重新抛出 `AppFailure`。
 - 数据层负责把驱动异常翻译成 `AppFailure`；驱动异常不得越过 `lib/data/`。
-- 面向用户的失败文案必须包含错误码，格式固定：`<消息>（错误码：FSD-CONN-001）`；至少有 widget test 断言 `find.textContaining('错误码：')`。
+- 面向用户的失败文案必须包含错误码，格式固定：`<消息>（错误码：FSD-CONN-001）`。
 
 反例：
 
@@ -239,7 +241,7 @@ try {
 
 - 日志统一走 `lib/core/logging/app_log.dart` 的 `AppLog.info/warn/error`；`lib/` 和 `test/` 中禁止 `print(`、`debugPrint(`。
 - `AppLog.error` 必须接收 `AppFailure`；日志只写 host、port、database 等非敏感字段，密码、完整连接串、驱动异常原文不得进入日志。
-- `ConnectionConfig.toString()` 必须遮蔽密码，输出中固定包含 `password: <redacted>`；必须有测试覆盖。
+- `ConnectionConfig.toString()` 必须遮蔽密码，输出中固定包含 `password: <redacted>`。
 - 连接信息只存在于内存：不得写入文件、`SharedPreferences`、数据库或剪贴板。
 - `lib/**` 中不得出现 `postgres://`、`postgresql://` 字面量；连接串由结构化字段拼装。测试夹具只能使用 `localhost` 和明显的假密码，并放在 `test/fixtures/**`。
 - 错误文案与日志都不得包含密码或完整连接串。
@@ -258,7 +260,7 @@ debugPrint('connecting postgres://reader:secret@localhost/db'); // 两处违反
 - 禁止无归属的 `TODO` / `FIXME`。允许的格式是 `// TODO(p00-002): <内容>`，指向一个已规划但尚未开始的 spec；当前 spec 的未完成工作不得用 TODO 代替。
 - 禁止在 `lib/` 留下模板计数器、示例代码，以及没有被任何文件引用的公共类。
 
-### FSD-11 静态检查与格式
+### FSD-11 静态检查配置
 
 项目根 `analysis_options.yaml` 至少包含：
 
@@ -284,24 +286,14 @@ linter:
 ```
 
 - 不得通过 `exclude` 排除 `lib/` 或 `test/` 下的手写文件。
-- 每次交付必须跑：
-
-```bash
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze
-flutter test
-```
-
-- 通过标准：`dart format` 退出码 0；`flutter analyze` 输出 `No issues found!`；`flutter test` 输出 `All tests passed!` 且没有跳过用例。
-- 分析器告警不得用 ignore 压掉；修代码，或回 spec 改需求。
+- 分析器告警不得用 `ignore` 压掉。
 
 ### FSD-12 规模与豁免
 
 - 单个手写 Dart 文件不超过 250 行（`test/fixtures/**` 除外）。
 - 固定豁免只有：`*.g.dart`、`*.freezed.dart`、`lib/generated/**`、Flutter 平台目录（`android/`、`ios/`、`linux/`、`macos/`、`windows/`、`web/`）。其它豁免必须写进当前 spec 第 6 节并经人批准，不得在代码里静默绕过。
-- 规范变更本身也要版本化：改动本文件时递增顶部版本，并同步 `steering.md`。
 
-## 2. 最小合规样例
+## 2. 最小示例
 
 `lib/data/schema_repository.dart`（包名以 `pubspec.yaml` 的 `name` 为准，这里用 `flutter_sdd`）：
 
@@ -350,173 +342,3 @@ p00-001: 连接数据库并列出 schema
 
 R: p00-001/R1
 ```
-
-## 3. 审计
-
-审计顺序固定：先机械检查，再人工确认。A0–A5、A8 使用 bash + ripgrep；A6 使用 bash + `find`/`awk`；A7 在任意 shell 执行。把 `<base>` 换成上一个已验收提交，`<spec>` 换成当前 spec 目录，`<spec-id>` 换成当前 spec 编号。
-
-### A0 建立基线
-
-```bash
-git diff --name-only <base>..HEAD
-sed -n '/## 4\. 必须做到/,/## 5\. 明确不做/p' specs/<spec>/spec.md
-```
-
-把第 4 节的 R 编号写成清单，作为 A2、A3 的对照。日常自检只看本次 diff 触及的 `lib/`、`test/` 文件；最终验收扩大到全部文件。
-
-### A1 文件头
-
-```bash
-rg -U --files-without-match '\A// spec: [^\n]+\n// layer: (core|domain|data|ui|test)\n// covers: [^\n]+\n' --glob '*.dart' --glob '!**/*.g.dart' --glob '!**/*.freezed.dart' --glob '!lib/generated/**' lib test
-```
-
-无输出即通过。再抽查 `spec` 与 `covers` 是否成对（支持代码应为 `support` + `none`）。
-
-### A2 锚点覆盖
-
-```bash
-rg -o --no-filename -r '$1' '^\s*// \[(p[0-9]{2}-[0-9]{3}/R[0-9]+)\]' lib | sort -u | rg '^<spec-id>/'
-```
-
-把 `<spec-id>` 换成当前 spec；输出与 A0 的 R 清单逐条对照：
-
-- spec 清单中的每条 R 都必须出现。
-- 输出中不得出现 spec 清单以外的令牌。
-- 每个令牌都能在 `lib/` 找到锚点下方的实现声明。
-- 每个文件的锚点集合与文件头 `covers` 一致。
-
-常见违规：`// [p00-001/R9]` 而 spec 只有 R1–R5；锚点悬在 import 上方；锚点与声明之间夹着空行。
-
-### A3 测试覆盖
-
-```bash
-rg -o --no-filename -r '$1' '^\s*(?:test|testWidgets)\(\x27\[(p[0-9]{2}-[0-9]{3}/R[0-9]+)\]' test | sort -u | rg '^<spec-id>/'
-rg -n '^\s*(test|testWidgets)\(' test | rg -v '(test|testWidgets)\(\x27\[(p[0-9]{2}-[0-9]{3}/R[0-9]+|support)\]'
-rg -n '^\s*group\(' test | rg 'p[0-9]{2}-[0-9]{3}/R[0-9]+'
-rg -n '\bskip:' test
-```
-
-第一条输出必须等于“全部 R”，第二条必须为空，第三条必须为空（令牌不得出现在 group 名），第四条必须为空（或 `skip:` 只出现在夹具字符串里，需人工确认）。
-
-### A4 错误码与异常
-
-```bash
-rg -n 'FSD-' lib --glob '!**/failure_codes.dart'
-rg -n 'FSD-' lib/core/errors/failure_codes.dart
-rg -o --no-filename 'FSD-[A-Z]+-[0-9]{3}' lib/core/errors/failure_codes.dart | sort | uniq -d
-rg -o --no-filename 'FSD-[A-Z]+-[0-9]{3}' lib/core/errors/failure_codes.dart | rg -v '^FSD-(CONN|SCHEMA|TABLE|UI|INTERNAL)-[0-9]{3}$'
-rg -n 'throw (Exception|StateError|ArgumentError|UnsupportedError)' lib
-rg -n '\bcatch\s*\(' lib
-rg -n '错误码：' lib/ui
-```
-
-前两条应确认：`failure_codes.dart` 之外的 `lib/` 没有 `FSD-` 字面量；码表本身使用规定的 `AREA`。第三条应无输出（无重复码）。第四条应无输出（无非法区域）。第五条应无输出（无裸异常）。第六条逐条确认都是 `on <Type> catch`。第七条至少命中每个展示失败的位置。
-
-### A5 分层与禁止项
-
-```bash
-rg -n 'package:flutter/' lib/domain lib/data
-rg -n 'package:postgres/' lib --glob '!lib/data/**'
-rg -n 'package:[a-z0-9_]+/(domain|data|ui)/' lib/core --glob '!lib/app.dart'
-rg -n 'package:[a-z0-9_]+/(data|ui)/' lib/domain
-rg -n 'package:[a-z0-9_]+/ui/' lib/data
-rg -n 'package:flutter/(material|widgets|cupertino)' lib/ui --glob '*_controller.dart'
-rg -n "import '\.\.?/" lib test
-rg -n '\bdynamic\b' lib --glob '*.dart'
-rg -n '\b(print|debugPrint)\s*\(' lib test
-rg -n '^\s*part( of)?\s' lib test
-rg -n '// ignore:' lib test
-rg -n 'TODO|FIXME' lib test
-```
-
-除 `dynamic`、`ignore`、`TODO` 的命中需要按 FSD-10 的允许格式逐条确认外，其余都应为空。
-
-### A6 文件规模
-
-```bash
-find lib test -type f -name '*.dart' \
-  -not -path '*/fixtures/*' -not -path '*/generated/*' \
-  -not -name '*.g.dart' -not -name '*.freezed.dart' |
-while IFS= read -r f; do
-  n=$(awk 'END { print NR }' "$f")
-  if [ "$n" -gt 250 ]; then printf '%s\t%s\n' "$n" "$f"; fi
-done
-```
-
-无输出即通过。行数用 `awk 'END { print NR }'` 数，不要换成 `wc -l`：文件末尾缺换行时 `wc -l` 少算一行，边界上会漏掉恰好超限的文件。也不要换成 gawk 的 `ENDFILE` 块，BSD awk（macOS）不支持。命中判断写成 `if` 而不是 `[ .. ] && ...`，否则末个文件不超限时整条管道返回 1，退出码会把“通过”和“命中”反过来。
-
-### A7 静态闸门
-
-```bash
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze
-flutter test
-```
-
-三条命令退出码均为 0，且输出满足 FSD-11 的通过标准。
-
-### A8 提交
-
-```bash
-git log --format='%h %s' <base>..HEAD
-git log --format='%B' <base>..HEAD | rg '^R: '
-```
-
-逐个交付提交检查：标题符合 `pNN-NNN: ...`；正文 `R:` 行覆盖本次 diff 触及的全部令牌；没有跨 spec 混提交。纯文档提交按 FSD-04 判为不适用。
-
-### A9 人工确认
-
-以下条目无法只靠正则判断，必须打开文件看：
-
-- 锚点下方的声明确实实现了对应 R，而不是“贴标签”。
-- 支持代码里没有业务逻辑；`lib/core/` 只有错误、日志、配置、主题。
-- 每条 R 的错误路径有 `AppFailure` 和错误码，UI 实际展示了错误码。
-- 日志、错误文案、UI 中没有密码、完整连接串或驱动异常原文。
-- 豁免与 spec 第 6 节的决策一致。
-
-## 4. 判定与证据
-
-- 通过 A1–A8，且 A9 无问题：**合规**。
-- 任一机械检查不符合，或 A9 发现贴标签、越界、泄密：**不合规**。不合规必须列到文件与行号，并回到实现阶段修。
-- 不允许用“大部分符合”“不影响功能”作为通过理由。
-
-审查结论按下面格式记录到 `review.md`：
-
-| 规则 | 证据 | 结论 |
-|---|---|---|
-| FSD-01 | A1 无输出 | 通过 |
-| FSD-02 | A2 输出与 R1–R5 一致；抽查 3 处锚点 | 通过 |
-| FSD-03 | A3 输出等于 R1–R5；未发现无令牌测试 | 通过 |
-| FSD-04 | A8 提交标题与 `R:` 行符合 | 通过 |
-| FSD-05 | A5 无越层；目录与后缀抽查 | 通过 |
-| FSD-06 | A5 无驱动/Flutter 越层 import | 通过 |
-| FSD-07 | 抽查类名与文件名 | 通过 |
-| FSD-08 | A4 码表无重复、无裸异常、UI 含错误码 | 通过 |
-| FSD-09 | 无 `print`；脱敏测试通过 | 通过 |
-| FSD-10 | A5 禁止项无违规命中 | 通过 |
-| FSD-11 | 三条命令全绿 | 通过 |
-| FSD-12 | A6 无输出 | 通过 |
-
-证据必须是命令输出、`file:line` 或测试结果；没有证据的项目按“未检查”处理，不能写“通过”。
-
-## 5. 变更与解释
-
-- 本文件版本在顶部；每次修改都递增版本，并在 `steering.md` 索引行标注新版本。
-- 条款冲突时按更严格的一条执行；仍无法判断时停下来问人，不得自行豁免。
-- 本规范约束“怎么做”，不定义“做什么”。需求仍以 `spec.md` 第 4 节为准；规范不能替代 spec。
-- 新增或调整规则时，必须同步给出对应的审计动作（A1–A9）；没有审计动作的规则不得写进本文件。
-
-## 6. 实现完成前自检
-
-Agent 在宣布实现完成前，按顺序执行并保留输出：
-
-1. A1 文件头无遗漏。
-2. A2 每条 R 都有锚点，没有多余令牌，锚点与 `covers` 一致。
-3. A3 每条 R 都有测试，所有测试名带令牌。
-4. A4 错误码集中、无裸异常、UI 含错误码。
-5. A5 分层与禁止项无违规命中。
-6. A6 无超长文件。
-7. A7 三条命令全绿。
-8. A8 提交格式正确（有提交时）。
-
-八项都通过才能进入 `sdd-review`；缺一项就是“未完成”，不是“基本完成”。宣布完成时，回复里必须附上 A1–A8 的命令输出摘要；只写“已遵守规范”不算证据。
