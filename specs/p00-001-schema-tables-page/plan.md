@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | Spec | `p00-001-schema-tables-page`（spec v3 / approved） |
-| Status | `design-ok` |
+| Status | `approved` |
 
 ## 1. 方案摘要
 
@@ -177,39 +177,46 @@
 
 ## 4. 任务
 
-- [ ] **T1** 建立表输入、失败边界和主题 token
+- [x] **T1** 建立表输入、失败边界和主题 token
   - 改动：新建 `lib/domain/pg_table.dart`、`lib/core/errors/app_failure.dart`、`lib/core/errors/failure_codes.dart`、`lib/core/theme/app_spacing.dart`、`lib/core/theme/app_density.dart`、`lib/core/theme/app_theme.dart`、`test/domain/pg_table_test.dart` 及所需目录；记录保留原始数值，错误码集中定义，主题提供第 2.2 节适用 token。
   - 验证：运行 `flutter test test/domain/pg_table_test.dart`，不同记录值和空描述均保持原值；检查表级演示码以及间距、密度、深浅语义色符合已确认规范，本页页头高度为 56。
   - 覆盖：R3、R6、R9、R11
   - 依赖：—
 
-- [ ] **T2** 建立单列排序
+- [x] **T2** 建立单列排序
   - 改动：新建 `lib/ui/schema_tables/schema_tables_controller.dart`、`test/ui/schema_tables/schema_tables_controller_test.dart`；接收待排记录与调用方给出的比较依据，对副本排序而不导入 T1 的模型或保留另一份数据源。
   - 验证：运行 `flutter test test/ui/schema_tables/schema_tables_controller_test.dart`，以测试构造的记录和比较依据检查控制器五列的方向与顺序：先升序后降序、切列回到升序、默认表名升序且首次点击表名仍升序，原输入不变；检查控制器仅导入 foundation。领域字段的字典序、数值及原始字节比较由 T3 页面接入测试验证。
   - 覆盖：R3、R8、R11
   - 依赖：T1
 
-- [ ] **T3** 建立表格和四态页面
+- [x] **T3** 建立表格和四态页面
   - 改动：新建 `lib/ui/schema_tables/schema_tables_page.dart`、`lib/ui/schema_tables/widgets/schema_tables_view.dart`、`test/ui/schema_tables/schema_tables_page_test.dart`、`test/ui/schema_tables/widgets/schema_tables_view_test.dart`；接入 T1 的输入与主题；页面从表记录提供五列比较依据给 T2 的控制器，表格使用有序行；完成页头、六列、四态和滚动。
   - 验证：运行 `flutter test test/ui/schema_tables/schema_tables_page_test.dart test/ui/schema_tables/widgets/schema_tables_view_test.dart`，替换输入后页头、列值、统计和四态正确互斥；对故意乱序且大小跨单位的表记录检查文本字典序、列数与行数的数值顺序和大小的字节顺序；空态保留表头，失败码与消息同段，点击表头更新方向，行点击/悬停无变化；在 800×600 测试视口注入 500 行和长文本，纵向到末行且横向可读完整文本，无布局溢出。
   - 覆盖：R2、R3、R4、R5、R6、R7、R8、R9、R10、R11
   - 依赖：T1、T2
 
-- [ ] **T4** 接通首屏演示并移除计数器
+- [x] **T4** 接通首屏演示并移除计数器
   - 改动：替换 `lib/main.dart`，新建 `lib/app.dart`、`test/app_test.dart`，删除 `test/widget_test.dart`；入口只启动组合根，组合根装配演示记录、错误与四态参数。
   - 验证：运行 `flutter test test/app_test.dart`，默认输入为六行表，状态选择规则对 `data`、`empty`、`loading`、`error`、未设置及未知值返回既定状态，应用根首页无计数器；确认演示记录含空描述、长表名与长描述及不同数值，旧计数器测试已删除。各编译期参数的真实启动由 T5 单独验证，不以单次测试代替。
   - 覆盖：R1、R3、R4、R5、R6、R7、R11
   - 依赖：T1、T2、T3
 
-- [ ] **T5** 完成静态闸门与桌面核对
-  - 改动：只在 `lib/main.dart`、`lib/app.dart`、`lib/domain/pg_table.dart`、`lib/core/errors/app_failure.dart`、`lib/core/errors/failure_codes.dart`、`lib/core/theme/app_spacing.dart`、`lib/core/theme/app_density.dart`、`lib/core/theme/app_theme.dart`、`lib/ui/schema_tables/schema_tables_controller.dart`、`lib/ui/schema_tables/schema_tables_page.dart`、`lib/ui/schema_tables/widgets/schema_tables_view.dart`、`test/app_test.dart`、`test/domain/pg_table_test.dart`、`test/ui/schema_tables/schema_tables_controller_test.dart`、`test/ui/schema_tables/schema_tables_page_test.dart`、`test/ui/schema_tables/widgets/schema_tables_view_test.dart` 修复本次验证发现的问题，不扩展文件范围。
-  - 验证：运行 `dart format --output=none --set-exit-if-changed lib test`（退出码 0）、`flutter analyze`（`No issues found!`）、`flutter test`（`All tests passed!` 且无跳过）；按第 5 节启动桌面四态并检查滚动，按第 2.2 节适用条款核对文件头、需求锚点与镜像测试、错误码及敏感信息、分层、禁用项、250 行上限、主题与截图。逐项检查间距 token、行高/字号、按钮 4 圆角、1px 边界、无装饰、深浅主题的八个语义色、正文对比度至少 4.5:1，以及 UI 与应用根无内联颜色；只按第 2.1 节覆盖范围处理组件、骨架、空态和页头高度。
+- [x] **T5** 人工核对静态闸门与桌面四态
+  - 改动：—
+  - 验证：手工：用户按下列六步操作，全部符合预期才算通过。任一步不符时，用户把实际输出或截图交给 Agent，由 Agent 在 3.3 文件范围内修复，用户再重跑该步。
+    1 静态命令：在仓库根运行 `dart format --output=none --set-exit-if-changed lib test`，退出码为 0；运行 `flutter analyze`，输出 `No issues found!`；运行 `flutter test`，输出 `All tests passed!` 且没有跳过用例。
+    2 默认首屏：运行 `flutter run -d windows`（macOS 用 `flutter run -d macos`），首屏直接是两行页头、禁用的 `新建连接`、六列表头、六行数据和 `6 张表`，找不到计数器和加号按钮。
+    3 四态：先退出应用，再依次以 `--dart-define=DEMO_STATE=empty`、`loading`、`error`、`data` 重新启动，分别看到保留六列表头的 `该 schema 下暂无表。`、只在表格区的进度指示、`加载表失败（错误码：FSD-TABLE-001）`、六行数据；四态页头都在，前三种找不到 `张表`。
+    4 交互与窄窗：点 `大小` 两次，行顺序先按字节升序再降序，方向标记从 `▲` 变为 `▼`；点 `描述` 顺序不变；悬停和点击数据行没有选中、跳转或详情；把窗口缩到 800×600，没有黄黑溢出条，横向滚动能读到完整的长表名与描述。
+    5 窗格与视觉：在 1200×800 与 900×600 各留一张截图，用矩形框圈出页头与表格区边界；截图放在用户指定位置即可，不必提交进仓库，用户只需在验收反馈里给出两张图的路径与像素尺寸。核对分隔线为 1px、本页页头 56 高、按钮 4 圆角、无阴影或渐变；核对间距与行高字号 token、深浅主题八个语义色、正文对比度至少 4.5:1，UI 与应用根没有内联颜色。
+    6 代码核对：按第 2.2 节适用条款逐项检查三行文件头、需求锚点与镜像测试、错误码与敏感信息、分层与绝对导入、禁用项、单文件不超过 250 行；只按第 2.1 节覆盖范围处理组件、骨架、空态和页头高度。
+  - 执行者：用户
   - 覆盖：R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R11
   - 依赖：T1、T2、T3、T4
 
 ## 5. R → 验证
 
-本节自动检查和桌面步骤均留待实现阶段执行；编写计划不等于检查已通过。桌面入口为在仓库根运行 `flutter run -d windows`，macOS 改用 `flutter run -d macos`；运行前确认目标 Flutter 桌面设备可用，不启动 PostgreSQL，必要时断开网络。变更 `--dart-define=DEMO_STATE=<状态>` 后先退出应用再重新启动。桌面默认入口只有六行演示数据；替换输入及 500 行用 widget 测试构造，不将测试夹具当成桌面入口。
+本节自动命令和桌面步骤均留待实现完成后执行，最终由用户在 T5 逐项核对；编写计划不等于检查已通过。桌面入口为在仓库根运行 `flutter run -d windows`，macOS 改用 `flutter run -d macos`；运行前确认目标 Flutter 桌面设备可用，不启动 PostgreSQL，必要时断开网络。变更 `--dart-define=DEMO_STATE=<状态>` 后先退出应用再重新启动。桌面默认入口只有六行演示数据；替换输入及 500 行用 widget 测试构造，不将测试夹具当成桌面入口。
 
 #### R1 启动首屏
 - R：R1
@@ -287,11 +294,11 @@
 #### 状态与错误信息错位
 - 风险：状态或外部记录更新后仍显示旧行、旧数量，或者失败 cause 与连接敏感字段进入页面。
 - 触发信号：替换输入测试、四态桌面核对发现残留行/数量、失败文案缺错误码或出现异常原文；默认/未知参数回退错误。
-- 应对：Agent 只在 3.3 的演示装配、页面、控制器与对应测试内核对数据流并修复，复跑 T2–T5 对应检查；若必须引入数据库、调试入口或改变需求/已确认方案，停止交用户决定。撤回同上，恢复原入口与原计数器测试，删除本次新建文件，保留未改的配置与平台文件。
+- 应对：Agent 只在 3.3 的演示装配、页面、控制器与对应测试内核对数据流并修复，复跑受影响的 T2–T4 检查；T5 由用户按原六步重跑，Agent 不自行判定 T5 通过。若必须引入数据库、调试入口或改变需求/已确认方案，停止交用户决定。撤回同上，恢复原入口与原计数器测试，删除本次新建文件，保留未改的配置与平台文件。
 
 #### 规范例外和桌面环境无法核实
 - 风险：实现误用 UI 覆盖范围、漏掉仍适用的主题/分析闸门，或桌面设备不可用导致人工验收无法进行。
 - 触发信号：三条静态命令、主题核对、边界截图未达预期，或找不到可运行的 Windows/macOS 桌面设备。
 - 应对：Agent 只修复 3.3 允许范围内的问题并重新检查；设备不可用或修复要求扩大文件范围、修改已批准上游时停止并报告未验证项目。撤回前核实两份原模板文件可取回；若不能取回，停止并报告未恢复状态，不假称已回到实施前；其他产物按前述整体撤回边界处理。
 
-**对证**：开工确认（B）本轮已进行 2/3 次独立核查、正文修订 1/2 轮。首次完整核查 V1–V8：阻塞 0、一般问题 1（Q1：控制器受导入限制时缺少排序输入协作约定）、轻微问题 0。第二次仅定向复核 Q1 与 3.1、3.2、T2、T3、R8 验证及风险的连带影响：Q1 已修正并通过，新增问题 0；遗留阻塞 0、一般问题 0、轻微问题 0。首次及正文修订后的最终 lint 均为 11 项通过。项目构建、测试与桌面验收未运行，留待实现阶段。
+**对证**：开工确认（B）本轮已进行 3/3 次独立核查、正文修订 3 轮（前 2 轮在上限内，第 3 轮经用户明确追加）。首次完整核查 V1–V8：阻塞 0、一般问题 1（Q1：控制器受导入限制时缺少排序输入协作约定）、轻微问题 0。第二次仅定向复核 Q1 与 3.1、3.2、T2、T3、R8 验证及风险的连带影响：Q1 已修正并通过，新增问题 0；遗留阻塞 0、一般问题 0、轻微问题 0。第三次按用户要求把第 4 节 T5 改为由用户执行的人工检查、并同步第 5 节前言后定向复核 V6–V8 及连带影响：T1–T4 仍承接 3.3 全部文件，T5 的「改动」为「—」与 3.3、3.4、依赖和撤回办法一致，未新增功能或验收；遗留阻塞 0、一般问题 0、轻微问题 2（Q2：第 6 节风险应对仍写「复跑 T2–T5」，与 T5 改由用户执行不一致；Q3：T5 第 5 步未写明截图存放位置与标注方式），按轮次上限未在正文修改；用户随后明确要求直接修正这两处，遂追加 1 轮修订：Q2 改为「复跑受影响的 T2–T4 检查，T5 由用户按原六步重跑，Agent 不自行判定 T5 通过」，Q3 改为「用矩形框圈出页头与表格区边界，截图放在用户指定位置、不必提交进仓库，路径与像素尺寸在验收反馈中给出」。两处均为轻微问题，不再开启独立核查。核查后补 T5 验证首行的「手工：」标记以满足 lint 格式要求，六步内容未变。修订后 lint 11 项通过。项目构建、测试与桌面验收未运行，留待实现阶段。
