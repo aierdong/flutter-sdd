@@ -186,20 +186,38 @@ class PlanLintTests(unittest.TestCase):
             '#### 新增文件\n- 文件：`src/extra.py`\n- 操作：新建\n- 职责：辅助解析。\n\n### 3.4 边界')
         self.assert_rejected(listed, 'L05')
 
-    def test_separate_check_task_needs_no_change_path(self):
+    def with_separate_check_task(self, executor_line='  - 执行者：主 Agent\n'):
         text = re.sub(r'^  - 验证：[^\n]*$', '  - 验证：—', self.new_format(), flags=re.MULTILINE)
         marker = '## 5. R → 验证'
-        self.assertIn(marker, text)
         check_task = ('- [ ] **T3** 集中检查\n'
                       '  - 改动：—\n'
                       '  - 验证：`flutter test test/report_test.dart`：相关用例通过。\n'
+                      + executor_line +
                       '  - 覆盖：R1、R2\n'
                       '  - 依赖：T1、T2\n\n')
         text = text.replace(marker, check_task + marker)
         text = text.replace('- 任务：T1', '- 任务：T1、T3', 1)
         text = text.replace('- 任务：T2', '- 任务：T2、T3', 1)
-        code, output = self.run_plan(text)
+        return text
+
+    def test_separate_check_task_needs_no_change_path(self):
+        code, output = self.run_plan(self.with_separate_check_task())
         self.assertEqual(code, 0, output)
+
+    def test_check_task_requires_valid_executor(self):
+        for executor in ('主 Agent', '子 Agent', '用户'):
+            with self.subTest(executor=executor):
+                code, output = self.run_plan(
+                    self.with_separate_check_task('  - 执行者：%s\n' % executor))
+                self.assertEqual(code, 0, output)
+        self.assert_rejected(self.with_separate_check_task(''), 'L05')
+        self.assert_rejected(self.with_separate_check_task('  - 执行者：审查 Agent\n'), 'L05')
+        self.assert_rejected(self.with_separate_check_task(
+            '  - 执行者：主 Agent\n  - 执行者：子 Agent\n'), 'L05')
+
+    def test_implementation_task_must_not_set_executor(self):
+        self.assert_rejected(
+            self.ready().replace('  - 依赖：—', '  - 依赖：—\n  - 执行者：主 Agent'), 'L05')
 
     def test_placeholder_verification(self):
         text = self.ready().replace("`flutter test test/report_test.dart`：跑完同目录出现报告文件。", "<验证命令>")

@@ -19,7 +19,7 @@ Agent 使用字段列表填写计划，并用四级标题分隔记录。
     L03  方案摘要非空、不超过 30 行、有「需要用户决定的事项」或「无需用户决定」
     L04  第 2 节两组记录：2.1 需要用户确认的例外（三字段、去向合法、覆盖写明条款、理由及可判断的回归条件）、2.2 Agent 遵循的既有规范（每条有真实出处；
          引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
-    L05  任务：编号连续、四行齐全；已安排的检查可执行；依赖只指前面的任务；已列改动与 3.3 一致
+    L05  任务：编号连续、四行齐全；检查任务写明执行者；已安排的检查可执行；依赖只指前面的任务；已列改动与 3.3 一致
     L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽；允许明确不安排检查
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态只能 draft；design-ok / approved 时第 3–6 节及设计子节完整，
@@ -60,8 +60,12 @@ FORBIDDEN_HEAD = ('基线', 'Commit', 'commit', 'SHA', 'sha', 'Tag', 'tag')
 # 第 1 节正文行数上限（不含空行与注释）。
 SUMMARY_MAX_LINES = 30
 
-# 任务块的四行，缺一行就 FAIL。
+# 任务块的四行固定字段，缺一行就 FAIL；检查任务另校验「执行者」。
 TASK_FIELDS = ('改动', '验证', '覆盖', '依赖')
+
+# 检查任务的执行者。计划决定由谁执行，实现阶段按此执行，不再自行改派。
+EXECUTOR_FIELD = '执行者'
+EXECUTORS = ('主 Agent', '子 Agent', '用户')
 
 # 约束的去向。`覆盖` 是正常做法，但须在 2.1 写明被覆盖条款、理由和可判断的回归条件。
 # 后两个是阻断态：出现时这份 plan 不能进 approved。
@@ -955,6 +959,27 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
         rep.task_checks[tid] = has_check
         if not has_change and not has_check:
             rep.fail('L05', 'T%d 的改动与验证不能同时为「—」；任务须有具体内容' % tid)
+        else:
+            executor_hits = list(re.finditer(
+                r'^\s*-\s*%s[：:][ \t]*(.*)$' % EXECUTOR_FIELD, block, re.MULTILINE))
+            executor = executor_hits[0].group(1).strip() if executor_hits else ''
+            if len(executor_hits) > 1:
+                rep.fail('L05', 'T%d 的「执行者」字段重复' % tid)
+            if has_check and not has_change:
+                if not executor:
+                    rep.fail(
+                        'L05',
+                        'T%d 是检查任务，缺「- 执行者：」一行（%s）'
+                        % (tid, ' / '.join(EXECUTORS)),
+                    )
+                elif executor not in EXECUTORS:
+                    rep.fail(
+                        'L05',
+                        'T%d 的执行者「%s」不合法，应为 %s'
+                        % (tid, executor, ' / '.join(EXECUTORS)),
+                    )
+            elif executor:
+                rep.fail('L05', 'T%d 是实现任务，不写「执行者」；执行分组由实现阶段决定' % tid)
     task_files = {path for _, block in blocks for hit in re.finditer(
         r'^\s*-\s*改动[：:]\s*(.*)$', block, re.MULTILINE)
         for path in _CHANGE_PATH.findall(hit.group(1))}
