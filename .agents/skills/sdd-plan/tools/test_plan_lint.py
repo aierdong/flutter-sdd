@@ -158,6 +158,49 @@ class PlanLintTests(unittest.TestCase):
         text = text.replace("`flutter test test/report_test.dart`：跑完同目录出现报告文件。", "—")
         self.assert_rejected(text, "L06")
 
+    def test_no_checks_is_explicit_and_implementation_task_needs_no_check(self):
+        text = self.new_format()
+        text = re.sub(r'^  - 验证：[^\n]*$', '  - 验证：—', text, flags=re.MULTILINE)
+        text = re.sub(r'^- 自动验证：[^\n]*$', '- 自动验证：未安排', text, flags=re.MULTILINE)
+        text = text.replace('- 手工步骤：—', '- 手工步骤：未安排')
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+        self.assert_rejected(text.replace('- 手工步骤：未安排', '- 手工步骤：—', 1), 'L06')
+
+    def test_check_arrangement_must_match_tasks(self):
+        original = self.new_format()
+        text = re.sub(r'^  - 验证：[^\n]*$', '  - 验证：—', original, flags=re.MULTILINE)
+        self.assert_rejected(text, 'L06')  # 有检查方法，却没有对应的检查任务。
+        other = original.replace('- 自动验证：`flutter test test/report_test.dart`：跑完同目录出现报告文件。',
+                                 '- 自动验证：未安排', 1)
+        other = other.replace('- 手工步骤：—', '- 手工步骤：未安排', 1)
+        self.assert_rejected(other, 'L06')  # 声称不安排检查，任务却安排了检查。
+
+    def test_empty_task_and_unreferenced_inventory_rejected(self):
+        text = self.new_format().replace('  - 改动：新建 `lib/report.dart`、`test/report_test.dart`（含文件写出断言）。',
+                                         '  - 改动：—')
+        text = text.replace('  - 验证：`flutter test test/report_test.dart`：跑完同目录出现报告文件。',
+                            '  - 验证：—')
+        self.assert_rejected(text, 'L05')
+        listed = self.new_format().replace('### 3.4 边界',
+            '#### 新增文件\n- 文件：`src/extra.py`\n- 操作：新建\n- 职责：辅助解析。\n\n### 3.4 边界')
+        self.assert_rejected(listed, 'L05')
+
+    def test_separate_check_task_needs_no_change_path(self):
+        text = re.sub(r'^  - 验证：[^\n]*$', '  - 验证：—', self.new_format(), flags=re.MULTILINE)
+        marker = '## 5. R → 验证'
+        self.assertIn(marker, text)
+        check_task = ('- [ ] **T3** 集中检查\n'
+                      '  - 改动：—\n'
+                      '  - 验证：`flutter test test/report_test.dart`：相关用例通过。\n'
+                      '  - 覆盖：R1、R2\n'
+                      '  - 依赖：T1、T2\n\n')
+        text = text.replace(marker, check_task + marker)
+        text = text.replace('- 任务：T1', '- 任务：T1、T3', 1)
+        text = text.replace('- 任务：T2', '- 任务：T2、T3', 1)
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
     def test_placeholder_verification(self):
         text = self.ready().replace("`flutter test test/report_test.dart`：跑完同目录出现报告文件。", "<验证命令>")
         self.assert_rejected(text, "L06")

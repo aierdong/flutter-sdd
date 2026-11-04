@@ -19,8 +19,8 @@ Agent 使用字段列表填写计划，并用四级标题分隔记录。
     L03  方案摘要非空、不超过 30 行、有「需要用户决定的事项」或「无需用户决定」
     L04  第 2 节两组记录：2.1 需要用户确认的例外（三字段、去向合法、覆盖写明条款、理由及可判断的回归条件）、2.2 Agent 遵循的既有规范（每条有真实出处；
          引用了 2.1 覆盖过的条款时必须限定只沿用哪一部分）
-    L05  任务：编号连续、四行齐全、验证可执行；依赖只指前面的任务；改动不越 3.3 清单
-    L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽
+    L05  任务：编号连续、四行齐全；已安排的检查可执行；依赖只指前面的任务；已列改动与 3.3 一致
+    L06  覆盖：spec 每条 R 恰好一次，且指向真实任务，与任务的「覆盖」互洽；允许明确不安排检查
     L07  全文没有 TBD / 待定 / 稍后 / 视情况 这类空洞词
     L08  阻断态只能 draft；design-ok / approved 时第 3–6 节及设计子节完整，
          显式决策记录字段完整，允许仅引用 2.1 而无新增取舍；风险记录与对证记录存在；不判语义通过
@@ -101,7 +101,7 @@ QUALIFIER_PATTERNS = (re.compile(r'除[^。；]{0,24}(?:外|之外)'),)
 PITCH_POINTER = '见 2.1'
 
 # 第 1 节末尾的「覆盖核对」记录：spec 每条 R 落到「用户会看到的变化」的哪一句。
-# 它和第 5 节的 `R → 验证` 同构：一个核"怎么做得到"，一个核"人看不看得见"。
+# 它和第 5 节的 `R → 检查安排` 同构：一个核任务及检查安排，一个核人能看到什么。
 # 只核存在性与引文可查；引文和 R 说的是不是一回事，脚本判不了。
 _SEEN_HEAD = '覆盖核对'
 _SEEN_TABLE = re.compile(r'\*\*%s\*\*[^\n]*\n(?:[ \t]*\n)*((?:[ \t]*\|[^\n]*\n)+)' % _SEEN_HEAD)
@@ -384,6 +384,7 @@ class Report:
         self.spec_rs: List[str] = []
         # 第 4 节的任务编号。
         self.task_ids: List[int] = []
+        self.task_checks: Dict[int, bool] = {}
         # 第 5 节 R → 任务号。
         self.coverage: Dict[str, List[int]] = {}
         # 约束表的去向集合。
@@ -904,7 +905,7 @@ def check_visible_map(rep: Report, sections: Dict[int, str]) -> None:
 
 
 def check_tasks(rep: Report, section: str, design: str = '') -> None:
-    """L05 任务编号连续、四行齐全、验证可执行、依赖成链、改动不越 3.3 边界。"""
+    """L05 任务编号连续、字段齐全、已安排的检查可执行、计划改动与 3.3 一致。"""
     blocks = task_blocks(section)
     if not blocks:
         rep.fail('L05', '第 4 节没有任何任务（`- [ ] **T1** ...`）')
@@ -921,23 +922,25 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
             rep.fail('L05', '第 3.3 节每行必须用反引号逐个列出规范的仓库相对文件路径')
     files = design_files(design)
     if not files:
-        rep.fail('L05', '第 3.3 节没有影响文件清单——请列出允许改动的具体文件，才能核对任务范围')
+        rep.fail('L05', '第 3.3 节没有影响文件清单——请列出计划中已知的改动文件，才能核对任务安排')
     seen: List[int] = []
     for index, (tid, block) in enumerate(blocks, 1):
         rep.task_ids.append(tid)
         seen.append(tid)
         if tid != index:
             rep.fail('L05', '任务编号不连续：第 %d 条是 T%d' % (index, tid))
+        fields = {}
         for field in TASK_FIELDS:
             matches = list(re.finditer(r'^\s*-\s*%s[：:][ \t]*(.*)$' % field, block, re.MULTILINE))
             hit = matches[0] if matches else None
+            fields[field] = hit.group(1).strip() if hit else ''
             if len(matches) > 1:
                 rep.fail('L05', 'T%d 的「%s」字段重复' % (tid, field))
             if hit is None:
                 rep.fail('L05', 'T%d 缺「- %s：」这一行' % (tid, field))
             elif hit.group(1).strip() in ('', '—', '-'):
-                # `依赖：—` 是合法写法：第一个任务没有前置。
-                if field != '依赖':
+                # 检查任务没有改动，普通实现任务没有逐项检查，首个任务没有依赖。
+                if field == '覆盖' or (field != '依赖' and hit.group(1).strip() == ''):
                     rep.fail('L05', 'T%d 的「%s」是空的' % (tid, field))
             elif field == '验证':
                 value = hit.group(1)
@@ -947,6 +950,16 @@ def check_tasks(rep: Report, section: str, design: str = '') -> None:
                 _check_deps(rep, tid, hit.group(1), seen)
             elif field == '改动':
                 _check_change(rep, tid, hit.group(1), files)
+        has_change = fields['改动'] not in ('', '—', '-')
+        has_check = fields['验证'] not in ('', '—', '-')
+        rep.task_checks[tid] = has_check
+        if not has_change and not has_check:
+            rep.fail('L05', 'T%d 的改动与验证不能同时为「—」；任务须有具体内容' % tid)
+    task_files = {path for _, block in blocks for hit in re.finditer(
+        r'^\s*-\s*改动[：:]\s*(.*)$', block, re.MULTILINE)
+        for path in _CHANGE_PATH.findall(hit.group(1))}
+    for path in files - task_files:
+        rep.fail('L05', '第 3.3 节列出 `%s`，但没有任务安排改动' % path)
     rep.ok('L05')
 
 
@@ -972,10 +985,9 @@ def _check_deps(rep: Report, tid: int, value: str, seen: List[int]) -> None:
 
 
 def _check_change(rep: Report, tid: int, value: str, files: set) -> None:
-    """改动的路径必须在 3.3 清单内。
-
-    3.3 列出实现阶段允许改动的文件，任务中不能增加清单外的文件。
-    """
+    """计划里已知的改动路径须与 3.3 一致；不约束实现时的辅助文件。"""
+    if value.strip() in ('—', '-'):
+        return
     if not files:
         return
     paths = _CHANGE_PATH.findall(value)
@@ -989,7 +1001,7 @@ def _check_change(rep: Report, tid: int, value: str, files: set) -> None:
             continue
         rep.fail(
             'L05',
-            'T%d 要改 `%s`，但它不在第 3.3 节的文件清单里——只允许修改清单内的文件' % (tid, path),
+            'T%d 计划改动 `%s`，但第 3.3 节未列出——请保持计划中的任务与影响文件一致' % (tid, path),
         )
 
 
@@ -1017,14 +1029,16 @@ def check_coverage(rep: Report, section5: str, section4: str) -> None:
         rid = clean_cell(cells[0])
         seen[rid] = seen.get(rid, 0) + 1
         if len(cells) != 4:
-            rep.fail('L06', '%s 的验证记录必须有 R、任务、自动验证、手工步骤四个字段' % rid)
+            rep.fail('L06', '%s 的检查安排须有 R、任务、自动验证、手工步骤四个字段' % rid)
         auto = clean_cell(cells[2]) if len(cells) > 2 else ''
         manual = clean_cell(cells[3]) if len(cells) > 3 else ''
         absent = ('', '—', '-', '无', '不适用')
         auto_empty = auto in absent or re.fullmatch(r'<[^<>]+>', auto) is not None
         manual_empty = manual in absent or re.fullmatch(r'<[^<>]+>', manual) is not None
-        if auto_empty and manual_empty:
-            rep.fail('L06', '%s 的自动验证与手工步骤不能同时为空' % rid)
+        if auto_empty and manual_empty and not (auto == '未安排' and manual == '未安排'):
+            rep.fail('L06', '%s 的自动验证与手工步骤不能同时为空；无检查时均写「未安排」' % rid)
+        if (auto == '未安排') != (manual == '未安排'):
+            rep.fail('L06', '%s 未安排检查时两个字段均须写「未安排」' % rid)
         task_cell = cells[1] if len(cells) > 1 else ''
         refs = [int(match.group(1)) for match in _T_REF.finditer(task_cell)]
         if not refs:
@@ -1032,11 +1046,16 @@ def check_coverage(rep: Report, section5: str, section4: str) -> None:
         for ref in refs:
             if ref not in rep.task_ids:
                 rep.fail('L06', '%s 指向不存在的 T%d' % (rid, ref))
+        has_task_check = any(rep.task_checks.get(ref, False) for ref in refs)
+        if auto == '未安排' and manual == '未安排' and has_task_check:
+            rep.fail('L06', '%s 写「未安排」，但所指任务安排了检查' % rid)
+        elif not (auto == '未安排' and manual == '未安排') and not (auto_empty and manual_empty) and not has_task_check:
+            rep.fail('L06', '%s 写了检查方法，却没有指向已安排检查的任务' % rid)
         rep.coverage[rid] = refs
 
     for rid in rep.spec_rs:
         if rid not in seen:
-            rep.fail('L06', 'spec 的 %s 没有验证行——没有验证的需求等于没实现' % rid)
+            rep.fail('L06', 'spec 的 %s 缺少对应任务与检查安排说明' % rid)
         elif seen[rid] > 1:
             rep.fail('L06', '%s 出现 %d 次，每条 R 只能有一行' % (rid, seen[rid]))
     for rid in seen:
