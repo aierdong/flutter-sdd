@@ -160,7 +160,8 @@ _HEAD_SPEC = re.compile(
 _SECTION = re.compile(r'^## (\d)\. .*$', re.MULTILINE)
 _SUBSECTION = re.compile(r'^### (\d\.\d) .*$', re.MULTILINE)
 _TASK_MARK = re.compile(r'^-\s*\[[ xX]\]\s*\*\*T(\d+)\*\*', re.MULTILINE)
-_SPEC_R = re.compile(r'^\s*-\s*\[[ xX]\]\s*\*\*R(\d+)\*\*', re.MULTILINE)
+# 当前 spec 模板不带复选框；仍兼容旧 spec 的 `- [ ] **R1**`。
+_SPEC_R = re.compile(r'^\s*-\s*(?:\[[ xX]\]\s*)?\*\*R(\d+)\*\*', re.MULTILINE)
 _R_REF = re.compile(r'R(\d+)')
 _T_REF = re.compile(r'T(\d+)')
 _MD_PATH = re.compile(r'[A-Za-z0-9_./-]+\.md')

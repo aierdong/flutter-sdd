@@ -17,12 +17,14 @@ DRAFT = TOOLS / "fixtures/specs/p00-900-demo-plan-readable"
 
 
 class PlanLintTests(unittest.TestCase):
-    def run_plan(self, text=None, directory=READY):
+    def run_plan(self, text=None, directory=READY, spec_text=None):
         original = lint._read
 
         def read(path):
             if text is not None and Path(path).name == "plan.md":
                 return text
+            if spec_text is not None and Path(path).name == "spec.md":
+                return spec_text
             return original(path)
 
         output = io.StringIO()
@@ -37,6 +39,19 @@ class PlanLintTests(unittest.TestCase):
         code, output = self.run_plan(text)
         self.assertEqual(code, 1, output)
         self.assertIn("FAIL  " + rule, output)
+
+    def test_spec_r_entries_without_checkbox_and_legacy_checkbox(self):
+        base = (READY / "spec.md").read_text(encoding="utf-8")
+        plain = base.replace("- [ ] **R1**", "- **R1**").replace("- [ ] **R2**", "- **R2**")
+        for label, spec_text in (("current", plain), ("legacy", base)):
+            with self.subTest(label=label):
+                code, output = self.run_plan(spec_text=spec_text)
+                self.assertEqual(code, 0, output)
+        self.assertEqual(lint._SPEC_R.findall(lint.split_sections(plain)[4]), ["1", "2"])
+        missing = plain.replace("- **R2**", "- **R3**")
+        code, output = self.run_plan(spec_text=missing)
+        self.assertEqual(code, 1, output)
+        self.assertIn("FAIL  L11", output)
 
     def test_positive_states(self):
         for directory, text in ((DRAFT, None), (READY, None),
