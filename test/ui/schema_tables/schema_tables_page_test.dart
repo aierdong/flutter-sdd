@@ -9,30 +9,31 @@ import 'package:flutter_sdd/domain/pg_table.dart';
 import 'package:flutter_sdd/ui/schema_tables/schema_tables_page.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// 故意乱序的输入：类型、列数、估算行数与大小都不随表名递增，大小为跨单位取值。
 const List<PgTable> _rows = <PgTable>[
   PgTable(
     name: 'alpha',
-    relationKind: 'Table',
+    relationKind: 'View',
     description: '第一条记录',
     columnCount: 3,
-    estimatedRows: 10,
-    sizeBytes: 900,
+    estimatedRows: 200,
+    sizeBytes: 5242880,
   ),
   PgTable(
     name: 'bravo',
     relationKind: 'Table',
     description: '第二条记录',
     columnCount: 5,
-    estimatedRows: 20,
-    sizeBytes: 100,
+    estimatedRows: 10,
+    sizeBytes: 900,
   ),
   PgTable(
     name: 'delta',
-    relationKind: 'Table',
+    relationKind: 'Partitioned table',
     description: '第三条记录',
     columnCount: 1,
-    estimatedRows: 30,
-    sizeBytes: 5000,
+    estimatedRows: 3000,
+    sizeBytes: 40960,
   ),
 ];
 
@@ -161,7 +162,7 @@ void main() {
     expect(find.textContaining('张表'), findsNothing);
   });
 
-  testWidgets('[p00-001/R8] 默认按表名升序，点击表头切换排序与方向标记', (
+  testWidgets('[p00-001/R8] 五列按字典序、数值与原始字节排序，描述不可排序', (
     WidgetTester tester,
   ) async {
     _useDesktopView(tester);
@@ -171,35 +172,35 @@ void main() {
     expect(find.textContaining('表名 ▲'), findsOneWidget);
     _expectRowOrder(tester, <String>['alpha', 'bravo', 'delta']);
 
+    for (final (String label, List<String> order) in <(String, List<String>)>[
+      ('类型', <String>['delta', 'bravo', 'alpha']),
+      ('列数', <String>['delta', 'alpha', 'bravo']),
+      ('估算行数', <String>['bravo', 'alpha', 'delta']),
+      ('大小', <String>['bravo', 'delta', 'alpha']),
+    ]) {
+      await tester.tap(find.textContaining(label));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('$label ▲'), findsOneWidget);
+      _expectRowOrder(tester, order);
+    }
+
+    // 大小按原始字节比较：显示文字的升序是 40 KB、5 MB、900 B，与字节升序不同。
+    expect(find.text('40 KB'), findsOneWidget);
+    expect(find.text('5 MB'), findsOneWidget);
+    expect(find.text('900 B'), findsOneWidget);
     await tester.tap(find.textContaining('大小'));
     await tester.pumpAndSettle();
-
-    expect(find.textContaining('大小 ▲'), findsOneWidget);
-    expect(find.textContaining('表名'), findsOneWidget);
-    _expectRowOrder(tester, <String>['bravo', 'alpha', 'delta']);
-
-    await tester.tap(find.textContaining('大小'));
-    await tester.pumpAndSettle();
-
     expect(find.textContaining('大小 ▼'), findsOneWidget);
-    _expectRowOrder(tester, <String>['delta', 'alpha', 'bravo']);
-  });
-
-  testWidgets('[p00-001/R8] 描述表头不可排序', (WidgetTester tester) async {
-    _useDesktopView(tester);
-    await tester.pumpWidget(_wrap(_page()));
-    await tester.pumpAndSettle();
+    _expectRowOrder(tester, <String>['alpha', 'delta', 'bravo']);
 
     expect(
       find.ancestor(of: find.text('描述'), matching: find.byType(InkWell)),
       findsNothing,
     );
-
     await tester.tap(find.text('描述'));
     await tester.pumpAndSettle();
-
-    expect(find.textContaining('表名 ▲'), findsOneWidget);
-    _expectRowOrder(tester, <String>['alpha', 'bravo', 'delta']);
+    expect(find.textContaining('大小 ▼'), findsOneWidget);
+    _expectRowOrder(tester, <String>['alpha', 'delta', 'bravo']);
   });
 
   testWidgets('[p00-001/R11] 替换连接信息与表记录后页面随之更新', (WidgetTester tester) async {

@@ -27,7 +27,6 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
-evidence
 
 # Symbolication related
 app.*.symbols

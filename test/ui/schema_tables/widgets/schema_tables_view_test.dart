@@ -2,6 +2,7 @@
 // layer: test
 // covers: p00-001/R3, p00-001/R4, p00-001/R9, p00-001/R10
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_sdd/core/theme/app_theme.dart';
 import 'package:flutter_sdd/domain/pg_table.dart';
@@ -126,6 +127,17 @@ void main() {
     await tester.pumpWidget(_host(_view(_manyRows())));
     expect(tester.takeException(), isNull);
 
+    // 长文本按单元格宽度换行，没有省略或裁剪设置，渲染高度超过单行。
+    final Finder longName = find.text('table_000_with_a_long_name');
+    final Text longNameText = tester.widget<Text>(longName);
+    expect(longNameText.maxLines, isNull);
+    expect(longNameText.overflow, isNull);
+    final Finder longDescription = find.text('第 0 行的长描述，用来验证换行与横向滚动都不会截断文本内容');
+    expect(
+      tester.getSize(longDescription).height,
+      greaterThan(tester.getSize(find.text('0').first).height),
+    );
+
     final ScrollableState horizontal = _scrollableOf(
       tester,
       SchemaTablesView.horizontalScrollKey,
@@ -137,12 +149,22 @@ void main() {
     expect(horizontal.position.maxScrollExtent, greaterThan(0));
     expect(vertical.position.maxScrollExtent, greaterThan(0));
 
+    // 横向滚到最右，最右列完整可读，左侧长表名仍在原位。
     await tester.drag(
       find.byKey(SchemaTablesView.horizontalScrollKey),
-      const Offset(-600, 0),
+      const Offset(-2000, 0),
     );
     await tester.pumpAndSettle();
-    expect(horizontal.position.pixels, greaterThan(0));
+    expect(
+      horizontal.position.pixels,
+      closeTo(horizontal.position.maxScrollExtent, 1),
+    );
+    final Rect lastSizeCell = tester.getRect(
+      find.text(formatByteSize(499 * 1024 * 1024)),
+    );
+    expect(lastSizeCell.left, greaterThanOrEqualTo(0));
+    expect(lastSizeCell.right, lessThanOrEqualTo(800));
+    expect(longName, findsOneWidget);
 
     final Finder lastRow = find.text('table_499_with_a_long_name');
     expect(lastRow, findsOneWidget);
@@ -174,5 +196,40 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('customers'), findsOneWidget);
     expect(find.text('invoices'), findsOneWidget);
+  });
+
+  testWidgets('[p00-001/R10] 悬停数据行不产生选中、导航或详情', (WidgetTester tester) async {
+    await tester.pumpWidget(_host(_view(_rows)));
+    final Rect before = tester.getRect(find.text('customers'));
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+
+    final Offset rowCenter = tester.getCenter(find.text('customers'));
+    for (final Offset point in <Offset>[
+      rowCenter,
+      rowCenter + const Offset(-60, 0),
+      rowCenter + const Offset(60, 0),
+    ]) {
+      await mouse.moveTo(point);
+      await tester.pumpAndSettle();
+      expect(
+        find.ancestor(
+          of: find.text('customers'),
+          matching: find.byType(InkWell),
+        ),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    }
+
+    expect(tester.getRect(find.text('customers')), before);
+    expect(find.text('customers'), findsOneWidget);
+    expect(find.text('invoices'), findsOneWidget);
+    expect(find.text('客户主数据'), findsOneWidget);
+    expect(find.text('sessions'), findsOneWidget);
   });
 }
