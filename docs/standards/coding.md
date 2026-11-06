@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| 版本 | v4 |
+| 版本 | v5 |
 | 状态 | 生效 |
 | 适用 | `lib/**`、`test/**`、`analysis_options.yaml` |
 | 目的 | 约束代码本身写成什么样：文件与目录、命名、依赖方向、失败模型、日志与禁止用法 |
@@ -177,6 +177,7 @@ ui → data → domain → core
 - `lib/data/**` 可以 import `core/errors/`、`core/config/`、`core/logging/`、`domain/` 和 PostgreSQL 驱动；不得 import `package:flutter/`、`ui/`。
 - `lib/ui/**` 可以 import 任意本地层；不得 import `package:postgres/`。
 - 项目内 import 一律写成 `package:<app>/...` 绝对导入；禁止用 `../`、`./` 跨目录相对导入。
+- 测试支撑代码例外：`package:<app>/...` 只映射到 `lib/`，测试文件引用 `test/support/**` 或 `test/fixtures/**` 时只能用相对路径，允许带 `../`。相对路径只用于这两个目录；引用 `lib/` 下的代码仍须写 `package:<app>/...`。这条例外只解决路径可达性，两个目录的职责仍受 FSD-02、FSD-03 约束。
 - `*_controller.dart` 只能 import `package:flutter/foundation.dart`，不得 import `material.dart`、`widgets.dart`、`cupertino.dart`。
 - PostgreSQL 驱动只允许出现在 `lib/data/**`。
 
@@ -188,6 +189,10 @@ import 'package:flutter/material.dart'; // 违反：domain 必须能在纯 Dart 
 
 // lib/ui/browser/browser_controller.dart
 import 'package:flutter/material.dart'; // 违反：controller 只使用 foundation
+
+// test/ui/browser/browser_page_test.dart
+import '../../support/page_harness.dart'; // 允许：test/support/ 只能用相对路径
+import '../../ui/browser/browser_page.dart'; // 违反：lib/ 下的代码必须写 package 绝对导入
 ```
 
 ### FSD-07 命名
