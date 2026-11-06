@@ -76,6 +76,7 @@ class SddLintTest(unittest.TestCase):
         rep = lint.Report()
         lint.check_spec(rep, spec)
         lint.check_grill(rep, grill)
+        lint.check_route(rep, grill)
         return rep
 
     def assert_failure(self, rep, message):
@@ -149,7 +150,7 @@ class SddLintTest(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 result = lint.main([str(folder)])
             self.assertEqual(0, result)
-            self.assertIn('PASS  10 项检查全部通过', output.getvalue())
+            self.assertIn('PASS  %d 项检查全部通过' % lint.TOTAL_RULES, output.getvalue())
 
     def test_entry_point_returns_one_for_approved_pending(self):
         spec, grill = documents(
@@ -203,6 +204,7 @@ class FieldRecordTest(SddLintTest):
         lint.check_spec(rep, spec)
         lint.check_spec_path(rep, 'p99-901-import', spec)
         lint.check_grill(rep, grill)
+        lint.check_route(rep, grill)
         return rep
 
     def test_new_format_has_no_tables(self):
@@ -375,6 +377,64 @@ class FieldRecordTest(SddLintTest):
                 (folder / 'grill.md').write_text(grill, encoding='utf-8')
                 with contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(0, lint.main([str(folder)]))
+
+
+class RouteTest(unittest.TestCase):
+    """路线图与切片两个可选字段，以及日志里的对照记录。"""
+
+    def build(self, route='p00', slice_id='003', verdict='一致',
+              record_route=None, record_slice=None, section=True,
+              definition='用户打开列表页并看到全部商品'):
+        spec, grill = documents()
+        if route is not None:
+            head = '| 路线图 | %s |\n| 切片 | %s |\n' % (route, slice_id)
+            spec = spec.replace('| 附带交付 |', head + '| 附带交付 |', 1)
+        if section:
+            grill += (
+                '\n## 路线图对照\n\n'
+                '#### 对照 1：商品列表页\n'
+                '- 路线图：%s\n'
+                '- 切片：%s\n'
+                '- 切片定义：%s\n'
+                '- 结论：%s\n'
+            ) % (route if record_route is None else record_route,
+                 slice_id if record_slice is None else record_slice,
+                 definition, verdict)
+        rep = lint.Report()
+        lint.check_spec(rep, spec)
+        lint.check_grill(rep, grill)
+        lint.check_route(rep, grill)
+        return rep
+
+    def test_no_route_passes(self):
+        self.assertEqual([], self.build(route=None, slice_id=None, section=False).failures)
+
+    def test_route_and_slice_present(self):
+        self.assertEqual([], self.build().failures)
+
+    def test_two_fields_must_appear_together(self):
+        rep = self.build(slice_id='—')
+        self.assertTrue(any(item.startswith('L11') for item in rep.failures))
+
+    def test_section_is_required(self):
+        rep = self.build(section=False)
+        self.assertTrue(any('路线图对照' in item for item in rep.failures))
+
+    def test_scope_overrun_stops(self):
+        rep = self.build(verdict='超出')
+        self.assertTrue(any('修订路线图' in item for item in rep.failures))
+
+    def test_record_must_match_head(self):
+        rep = self.build(record_slice='004')
+        self.assertTrue(any('不一致' in item for item in rep.failures))
+
+    def test_no_route_needs_not_applicable(self):
+        rep = self.build(route=None, slice_id=None, verdict='一致')
+        self.assertTrue(any(item.startswith('L11') for item in rep.failures))
+
+    def test_definition_must_be_copied(self):
+        rep = self.build(definition='见路线图')
+        self.assertTrue(any('照抄' in item for item in rep.failures))
 
 
 if __name__ == '__main__':

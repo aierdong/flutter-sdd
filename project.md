@@ -36,10 +36,10 @@ flutter test
 
 ## 阶段
 
-当前阶段：`p00`（流程验证与最小可用版本）。
+当前阶段：`p00`（流程验证与最小可用版本）。本阶段同时是当前的大需求，`pNN` 既指阶段号，也指这一次完整交付。
 
 ## 流程技能现状
 
-- 已有：`sdd-requirement`、`sdd-plan`、`sdd-impl`、`sdd-review`，各自包含规则、模板和校验脚本。
+- 已有：`sdd-roadmap`（可选，只有大需求才用）、`sdd-requirement`、`sdd-plan`、`sdd-impl`、`sdd-review`，各自包含所需的规则、模板和校验脚本。
 - 待建：无。
 - 已有 spec 见 `specs/`，不在流程入口逐条维护。

@@ -16,6 +16,7 @@
     L08  成本字段十一项齐全；预算符合需求类型；追加合法；用量不超过批准额度
     L09  覆盖矩阵恰好包含本类型必做维度；不适用有理由；待决状态与第 7 节双向对应
     L10  规范触碰清单存在；冲突项不许留在第 7 节
+    L11  路线图与切片两个头部字段同填或同空；日志有路线图对照记录，结论允许继续
 
 脚本只检查固定格式和可计算的规则。
 人仍需判断需求条目（R）是否正确、取舍是否合理；脚本不能替代这些判断。
@@ -53,8 +54,14 @@ SCOPE_TAGS = ('standard', 'doc', 'data', 'contract')
 # 规模上限：超过就该拆需求，而不是继续压缩表述。
 MAX_RS = 12
 
-# L01–L10 的检查项总数。
-TOTAL_RULES = 10
+# L01–L11 的检查项总数。
+TOTAL_RULES = 11
+
+# 路线图对照：头部两个可选字段的取值形状，以及记录里允许的结论。
+ROUTE_SHAPE = re.compile(r'^p\d{2}$')
+SLICE_SHAPE = re.compile(r'^\d{3}$')
+ROUTE_VERDICTS = ('一致', '不涉及', '超出', '切片定义有误')
+ROUTE_KEYS = ('路线图', '切片', '切片定义', '结论')
 
 # 规范条款编号的形状：大写前缀 + 序号，如 FSD-08 / SEC-3 / PERF-12。
 STANDARDS_ID = r'[A-Z][A-Z0-9]{1,5}-\d+'
@@ -210,6 +217,8 @@ class Report:
         self.r_ids: List[str] = []
         # 带 `**范畴**` 标记的 R 编号。
         self.tagged_rs: List[str] = []
+        # spec.md 头部字段，供路线图对照核对。
+        self.head: Dict[str, str] = {}
 
     def fail(self, code: str, message: str) -> None:
         self.failures.append('%s  %s' % (code, message))
@@ -243,6 +252,7 @@ def check_spec(rep: Report, text: str) -> None:
     """头部、七节结构、R 条目、不做清单、第 7 节、附带交付。"""
     head_text = re.split(r'^## 1\.', text, maxsplit=1, flags=re.MULTILINE)[0]
     head = check_fields(rep, 'L01', head_text, BASE_HEAD_FIELDS, 'spec.md 头部')
+    rep.head = head
     check_head(rep, head)
     sections = split_sections(text)
     for index in range(1, 8):
@@ -542,6 +552,48 @@ def _says_none(section: str) -> bool:
     return False
 
 
+def check_route(rep: Report, grill_text: str) -> None:
+    """L11 路线图与切片两个头部字段同填或同空；对照记录结论允许继续。"""
+    route = _blank(rep.head.get('路线图', '—'))
+    slice_id = _blank(rep.head.get('切片', '—'))
+    if bool(route) != bool(slice_id):
+        rep.fail('L11', '头部「路线图」与「切片」必须同时填写，或同时写 —')
+    if route and not ROUTE_SHAPE.fullmatch(route):
+        rep.fail('L11', '路线图必须形如 pNN，实际「%s」' % route)
+    if slice_id and not SLICE_SHAPE.fullmatch(slice_id):
+        rep.fail('L11', '切片必须是三位编号，如 003，实际「%s」' % slice_id)
+
+    section = section_named(grill_text, '路线图对照')
+    rows = record_rows(rep, 'L11', section, ROUTE_KEYS) if section else []
+    if route:
+        if section is None:
+            rep.fail('L11', 'grill.md 缺「## 路线图对照」一节；指定了切片就必须记录对照结果')
+        elif not rows:
+            rep.fail('L11', '「路线图对照」没有任何记录')
+    for got_route, got_slice, definition, verdict in rows:
+        if route and (got_route != route or got_slice != slice_id):
+            rep.fail('L11', '对照记录的「%s / %s」与头部「%s / %s」不一致'
+                     % (got_route, got_slice, route, slice_id))
+        if verdict not in ROUTE_VERDICTS:
+            rep.fail('L11', '对照结论只能是 %s，实际「%s」'
+                     % (' / '.join(ROUTE_VERDICTS), verdict))
+            continue
+        if verdict in ('超出', '切片定义有误'):
+            rep.fail('L11', '对照结论是「%s」：停下，由用户新开会话修订路线图，'
+                            '不在需求阶段扩大范围' % verdict)
+        if not route and verdict != '不涉及':
+            rep.fail('L11', '头部没有指定路线图时，对照结论只能写「不涉及」')
+        if len(definition) < 6:
+            rep.fail('L11', '对照记录必须照抄切片定义原文，不能只写「见路线图」')
+    rep.ok('L11')
+
+
+def _blank(raw: str) -> str:
+    """把 — 和「无」视为没填。"""
+    value = raw.strip()
+    return '' if value in ('', '—', '-', '无') else value
+
+
 # ─── 入口 ────────────────────────────────────────────────────────────────────
 
 
@@ -579,9 +631,11 @@ def main(argv=None) -> int:
 
     rep = Report()
     spec_text = _read(spec_path)
+    grill_text = _read(grill_path)
     check_spec(rep, spec_text)
     check_spec_path(rep, args.spec_dir, spec_text)
-    check_grill(rep, _read(grill_path))
+    check_grill(rep, grill_text)
+    check_route(rep, grill_text)
     return rep.report(args.spec_dir)
 
 
