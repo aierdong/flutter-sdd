@@ -11,10 +11,10 @@
     L02  第 1–7 节标题齐全
     L03  第 1 节有整体目标；「整体不做」每条带理由
     L04  第 2 节四项齐全；验证方式、验证者取值合法
-    L05  第 3 节每片字段齐全；slug 唯一；编号形状与状态合法
+    L05  第 3 节每片字段齐全；slug 唯一；编号形状合法；交付证据有对应目录与 review.md
     L06  切片编号连续，且与第 4 节推进顺序一致
     L07  前置引用存在、不指向自己、不成环
-    L08  路线外增补：写「无」或登记块二者取一；附属编号存在
+    L08  路线外增补登记块字段齐全，附属编号存在
     L09  第 5 节每条约定字段齐全；覆盖切片编号存在
     L10  第 7 节验收状态与验收记录一致
     L11  没有残留占位符和空洞词
@@ -37,9 +37,8 @@ from typing import Dict, List, Optional, Tuple
 
 # ─── 格式与规则常量 ────────────────────────────────────────────────────────────────
 
-HEAD_FIELDS = ('路线图', '大需求', 'Status', '版本')
+HEAD_FIELDS = ('路线图', '名称', 'Status', '版本')
 HEAD_STATUS = ('draft', 'approved')
-SLICE_STATUS = ('未开始', '进行中', '已交付')
 ACCEPT_STATUS = ('未验收', '已验收')
 ACCEPT_RESULT = ('通过', '未通过')
 SIGN_OFF = ('是', '否')
@@ -56,7 +55,8 @@ SECTION_TITLES = {
     7: '整体验收记录',
 }
 
-SLICE_KEYS = ('编号', 'slug', '解决什么问题', '做完后用户能', '前置', '状态')
+SLICE_KEYS = ('编号', 'slug', '解决什么问题', '做完后用户能', '前置')
+EVIDENCE_KEY = '交付证据'
 EXTRA_KEYS = ('编号', '附属于', '关系', '登记', '验证')
 AGREEMENT_KEYS = ('要求', '覆盖切片', '留给各切片 plan 决定')
 ACCEPT_KEYS = ('时间', '执行者', '实际路径', '结果', '未通过处')
@@ -106,11 +106,13 @@ def key_values(text: str) -> Dict[str, str]:
 
 
 def check_fields(rep: Report, code: str, text: str,
-                 keys: Tuple[str, ...], label: str) -> Dict[str, str]:
-    """字段齐全、非空、不重复。"""
+                 keys: Tuple[str, ...], label: str,
+                 optional: Tuple[str, ...] = ()) -> Dict[str, str]:
+    """字段齐全、非空、不重复；optional 里的字段可有可无。"""
     fields: Dict[str, str] = {}
+    wanted = tuple(keys) + tuple(optional)
     for key, value in field_pairs(text):
-        if key in keys:
+        if key in wanted:
             if key in fields:
                 rep.fail(code, '%s 重复字段「%s」' % (label, key))
             fields[key] = value
@@ -267,13 +269,13 @@ def check_acceptance_criteria(rep: Report, section: str) -> None:
 
 
 def check_slices(rep: Report, section: str) -> List[Dict[str, str]]:
-    """L05 每片字段齐全、slug 唯一、编号形状与状态合法。"""
+    """L05 每片字段齐全、slug 唯一、编号形状合法、交付证据有据可查。"""
     rows = []
     seen_slug = set()
     for title, body in blocks(section):
         if not title.startswith('切片'):
             continue
-        fields = check_fields(rep, 'L05', body, SLICE_KEYS, title)
+        fields = check_fields(rep, 'L05', body, SLICE_KEYS, title, optional=(EVIDENCE_KEY,))
         slug = fields.get('slug', '')
         if slug:
             if not SLUG_SHAPE.fullmatch(slug):
@@ -290,15 +292,32 @@ def check_slices(rep: Report, section: str) -> List[Dict[str, str]]:
             rep.slice_ids.append(sid.split('-')[-1])
         elif rep.route_id:
             rep.slice_ids.append('')
-        status = fields.get('状态', '')
-        if status and status not in SLICE_STATUS:
-            rep.fail('L05', '%s 的状态必须是 %s，实际「%s」'
-                     % (title, ' / '.join(SLICE_STATUS), status))
         rows.append(fields)
     if not rows:
         rep.fail('L05', '第 3 节没有任何「#### 切片：<名称>」记录')
     rep.ok('L05')
     return rows
+
+
+def check_evidence(rep: Report, rows: List[Dict[str, str]], path: str) -> None:
+    """L05 写了交付证据的切片，必须有对应的 spec 目录和 review.md。
+
+    路线图不记状态，交付与否只看这份证据；证据指不回真实文件时必须失败。
+    """
+    base = os.path.dirname(os.path.abspath(path))
+    for fields in rows:
+        evidence = fields.get(EVIDENCE_KEY, '')
+        sid = fields.get('编号', '')
+        if not evidence or not sid:
+            continue
+        dirs = [name for name in os.listdir(base)
+                if name.startswith(sid + '-') and os.path.isdir(os.path.join(base, name))] \
+            if os.path.isdir(base) else []
+        if not dirs:
+            rep.fail('L05', '%s 写了交付证据，但 %s 下没有 %s-* 目录' % (sid, base, sid))
+            continue
+        if not any(os.path.isfile(os.path.join(base, name, 'review.md')) for name in dirs):
+            rep.fail('L05', '%s 写了交付证据，但对应目录里没有 review.md' % sid)
 
 
 def check_numbers(rep: Report, rows: List[Dict[str, str]], section: str) -> None:
@@ -362,14 +381,12 @@ def find_cycle(edges: Dict[str, Optional[str]]) -> Optional[List[str]]:
 
 
 def check_extra(rep: Report, section: str) -> None:
-    """L08 路线外增补写「无」或登记块，二者取一；附属编号存在。"""
+    """L08 增补登记块字段齐全，附属编号存在；没有增补时不要求任何占位行。"""
     extra_blocks = [(title, body) for title, body in blocks(section)
                     if title.startswith('增补')]
     none_line = re.search(r'^-\s*路线外增补[：:]\s*(\S*)', strip_noise(section), re.MULTILINE)
     if extra_blocks and none_line:
-        rep.fail('L08', '既有增补登记块，又写了「- 路线外增补：」，两者只能留一个')
-    if not extra_blocks and none_line is None:
-        rep.fail('L08', '第 3 节缺「- 路线外增补：无」一行；没有增补时也必须写')
+        rep.fail('L08', '有增补登记块时，不要再写「- 路线外增补：」那一行')
     known = set(rep.slice_ids)
     for title, body in extra_blocks:
         fields = check_fields(rep, 'L08', body, EXTRA_KEYS, title)
@@ -489,6 +506,7 @@ def check_document(rep: Report, text: str, path: str) -> None:
     check_goal(rep, sections.get(1, ''))
     check_acceptance_criteria(rep, sections.get(2, ''))
     rows = check_slices(rep, sections.get(3, ''))
+    check_evidence(rep, rows, path)
     check_numbers(rep, rows, sections.get(4, ''))
     check_requires(rep, rows)
     check_extra(rep, sections.get(3, ''))

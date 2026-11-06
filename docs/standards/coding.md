@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| 版本 | v5 |
+| 版本 | v6 |
 | 状态 | 生效 |
 | 适用 | `lib/**`、`test/**`、`analysis_options.yaml` |
 | 目的 | 约束代码本身写成什么样：文件与目录、命名、依赖方向、失败模型、日志与禁止用法 |
@@ -229,7 +229,7 @@ final class AppFailure implements Exception {
 - `FSD-` 字面量只允许出现在 `failure_codes.dart` 和 `test/**` 的断言里；业务代码必须引用常量。
 - 业务代码只抛 `AppFailure`；禁止 `throw Exception(...)`、`throw StateError(...)`、`throw ArgumentError(...)`。编程错误用 `assert`。
 - 禁止无类型的 `catch (e)`；禁止空 catch。每个 catch 必须映射成带错误码的 `AppFailure` 并记录日志，或重新抛出 `AppFailure`。
-- 数据层负责把驱动异常翻译成 `AppFailure`；驱动异常不得越过 `lib/data/`。
+- 数据层负责把驱动异常翻译成 `AppFailure`；驱动异常的**对象**不得越过 `lib/data/`，但驱动返回的错误原文可以放进 `AppFailure.message`，随文案上浮到界面与日志。翻译的职责是补上错误码与所属区域，不是为每种驱动错误另写一套文案。
 - 面向用户的失败文案必须包含错误码，格式固定：`<消息>（错误码：FSD-CONN-001）`。
 
 反例：
@@ -245,16 +245,16 @@ try {
 ### FSD-09 日志与敏感信息
 
 - 日志统一走 `lib/core/logging/app_log.dart` 的 `AppLog.info/warn/error`；`lib/` 和 `test/` 中禁止 `print(`、`debugPrint(`。
-- `AppLog.error` 必须接收 `AppFailure`；日志只写 host、port、database 等非敏感字段，密码、完整连接串、驱动异常原文不得进入日志。
+- `AppLog.error` 必须接收 `AppFailure`；日志可以记录 host、port、database 等字段，也可以记录驱动返回的错误原文，但密码不得进入日志。
 - `ConnectionConfig.toString()` 必须遮蔽密码，输出中固定包含 `password: <redacted>`。
 - 连接信息只存在于内存：不得写入文件、`SharedPreferences`、数据库或剪贴板。
 - `lib/**` 中不得出现 `postgres://`、`postgresql://` 字面量；连接串由结构化字段拼装。测试夹具只能使用 `localhost` 和明显的假密码，并放在 `test/fixtures/**`。
-- 错误文案与日志都不得包含密码或完整连接串。
+- 错误文案与日志都不得包含密码。驱动返回的文本可能夹带密码，展示或记录之前必须先抹掉，不能依赖驱动不打印密码。完整连接串允许出现，前提是其中密码已被抹掉。
 
 反例：
 
 ```dart
-debugPrint('connecting postgres://reader:secret@localhost/db'); // 两处违反
+debugPrint('connecting postgres://reader:secret@localhost/db'); // 两处违反：用了 debugPrint，文本里有密码
 ```
 
 ### FSD-10 禁止清单

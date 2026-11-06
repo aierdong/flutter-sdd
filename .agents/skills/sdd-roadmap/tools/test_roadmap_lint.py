@@ -21,10 +21,10 @@ def document(route='p99', slices=None, order=None, extra=None, agreements=None,
     if slices is None:
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '用户看不到已有商品',
-             '做完后用户能': '用户打开列表页并看到全部商品', '前置': '无', '状态': '未开始'},
+             '做完后用户能': '用户打开列表页并看到全部商品', '前置': '无'},
             {'slug': 'product-edit', '编号': 'p99-002', '解决什么问题': '用户改不了商品信息',
              '做完后用户能': '用户修改一条商品后看到列表更新',
-             '前置': '001（提供：可浏览的商品列表）', '状态': '未开始'},
+             '前置': '001（提供：可浏览的商品列表）'},
         ]
     if order is None:
         order = '001 → 002'
@@ -32,14 +32,14 @@ def document(route='p99', slices=None, order=None, extra=None, agreements=None,
     body = []
     for item in slices:
         body.append('#### 切片：%s' % item.get('名称', item['slug']))
-        for key in lint.SLICE_KEYS:
+        for key in lint.SLICE_KEYS + (lint.EVIDENCE_KEY,):
             if key in item:
                 body.append('- %s：%s' % (key, item[key]))
         body.append('')
     slice_text = '\n'.join(body)
 
     if extra is None:
-        extra_text = '- 路线外增补：无'
+        extra_text = ''
     else:
         extra_text = '\n'.join([
             '#### 增补：%s' % extra.get('名称', '调整列表页布局'),
@@ -76,7 +76,7 @@ def document(route='p99', slices=None, order=None, extra=None, agreements=None,
         '# 商品管理路线图',
         '',
         '- 路线图：%s' % route,
-        '- 大需求：商品列表的增删改查',
+        '- 名称：商品列表的增删改查',
         '- Status：%s' % status,
         '- 版本：v1',
         '',
@@ -222,20 +222,24 @@ class RoadmapLintTest(unittest.TestCase):
         self.assertTrue(any('成环' in item for item in rep.failures))
 
     def test_extra_and_none_line_conflict(self):
-        path, text = document()
-        block = '\n'.join([
-            '#### 增补：调整布局',
-            '- 编号：p99-001',
-            '- 附属于：001',
-            '- 关系：调整列表页的布局并增加骨架屏',
-            '- 登记：是',
-            '- 验证：不单独安排，整体验收时只列举',
-            '',
-        ])
-        text = text.replace('- 路线外增补：无', block + '- 路线外增补：无')
+        path, text = document(extra={'名称': '调整布局'})
+        text = text.replace('\n## 4. 依赖与顺序', '\n- 路线外增补：无\n\n## 4. 依赖与顺序', 1)
         rep = lint.Report()
         lint.check_document(rep, text, path)
         self.assertTrue(any(item.startswith('L08') for item in rep.failures))
+
+    def test_no_extra_block_is_fine(self):
+        rep = self.check()
+        self.assertFalse(any(item.startswith('L08') for item in rep.failures))
+
+    def test_evidence_without_directory_fails(self):
+        slices = [
+            {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '看不到商品',
+             '做完后用户能': '看到列表', '前置': '无',
+             '交付证据': 'specs/p99-001-product-list/review.md'},
+        ]
+        rep = self.check(slices=slices, order='001')
+        self.assertTrue(any('交付证据' in item for item in rep.failures))
 
     def test_extra_owner_must_exist(self):
         self.assert_only('L08', extra={'附属于': '009'})
