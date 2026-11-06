@@ -1,15 +1,14 @@
-// spec: p00-001
+// spec: p00-001, p00-007
 // layer: ui
-// covers: p00-001/R2, p00-001/R4, p00-001/R5, p00-001/R6, p00-001/R7, p00-001/R8, p00-001/R11
+// covers: p00-001/R2, p00-001/R4, p00-001/R5, p00-001/R6, p00-001/R7, p00-001/R8, p00-001/R11, p00-007/R1, p00-007/R3, p00-007/R4, p00-007/R5
 
-import 'package:flutter/material.dart';
 import 'package:flutter_sdd/core/errors/app_failure.dart';
 import 'package:flutter_sdd/core/theme/app_density.dart';
 import 'package:flutter_sdd/core/theme/app_spacing.dart';
-import 'package:flutter_sdd/core/theme/app_theme.dart';
 import 'package:flutter_sdd/domain/pg_table.dart';
 import 'package:flutter_sdd/ui/schema_tables/schema_tables_controller.dart';
 import 'package:flutter_sdd/ui/schema_tables/widgets/schema_tables_view.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// 页面状态。加载中、失败与已加载记录三者互斥。
 sealed class SchemaTablesState {
@@ -69,14 +68,16 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
   late final SchemaTablesController<PgTable> _controller =
       SchemaTablesController<PgTable>(
         comparatorByColumn: <SchemaSortColumn, Comparator<PgTable>>{
-          SchemaSortColumn.name: (a, b) => a.name.compareTo(b.name),
-          SchemaSortColumn.relationKind: (a, b) =>
+          SchemaSortColumn.name: (PgTable a, PgTable b) =>
+              a.name.compareTo(b.name),
+          SchemaSortColumn.relationKind: (PgTable a, PgTable b) =>
               a.relationKind.compareTo(b.relationKind),
-          SchemaSortColumn.columnCount: (a, b) =>
+          SchemaSortColumn.columnCount: (PgTable a, PgTable b) =>
               a.columnCount.compareTo(b.columnCount),
-          SchemaSortColumn.estimatedRows: (a, b) =>
+          SchemaSortColumn.estimatedRows: (PgTable a, PgTable b) =>
               a.estimatedRows.compareTo(b.estimatedRows),
-          SchemaSortColumn.size: (a, b) => a.sizeBytes.compareTo(b.sizeBytes),
+          SchemaSortColumn.size: (PgTable a, PgTable b) =>
+              a.sizeBytes.compareTo(b.sizeBytes),
         },
       );
 
@@ -86,36 +87,40 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
     super.dispose();
   }
 
+  // [p00-007/R3] 页面底色与文字色取自当前 shadcn 主题，系统切换浅色、深色时整页随动。
+  // [p00-007/R4] 排序控制器与表格滚动状态都在本页面生命周期内，主题变化不重建它们。
+  // [p00-007/R5] 页头内容、数量统计、四态文案与互斥关系保持迁移前的行为。
   @override
   Widget build(BuildContext context) {
-    final colors = AppPalette.of(context);
-    return Material(
-      color: colors.canvas,
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.background,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _header(colors),
-          Container(height: 1, color: colors.border),
-          Expanded(child: _body(colors)),
+          _header(scheme),
+          Container(height: 1, color: scheme.border),
+          Expanded(child: _body(scheme)),
         ],
       ),
     );
   }
 
-  Widget _body(AppPalette colors) {
+  Widget _body(ColorScheme scheme) {
     return switch (widget.state) {
-      SchemaTablesLoading() => _loading(colors),
-      SchemaTablesFailed(:final failure) => _failed(colors, failure),
-      SchemaTablesLoaded(:final tables) => ListenableBuilder(
+      SchemaTablesLoading() => _loading(),
+      SchemaTablesFailed(:final AppFailure failure) => _failed(scheme, failure),
+      SchemaTablesLoaded(:final List<PgTable> tables) => ListenableBuilder(
         listenable: _controller,
         builder: (BuildContext context, Widget? child) =>
-            _loaded(colors, tables),
+            _loaded(scheme, tables),
       ),
     };
   }
 
   // [p00-001/R2] 页头两行显示连接名与数据库名、schema 名；右侧按钮禁用，页头不含主机、端口与用户名。
-  Widget _header(AppPalette colors) {
+  // [p00-007/R1] 禁用按钮改用 shadcn_flutter 的 Button.outline，页头不再使用 Material 组件。
+  Widget _header(ColorScheme scheme) {
     return SizedBox(
       height: AppDensity.pageHeaderHeight,
       child: Padding(
@@ -135,21 +140,21 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
                     style: TextStyle(
                       fontSize: AppDensity.bodyFontSize,
                       fontWeight: AppDensity.regionTitleWeight,
-                      color: colors.text,
+                      color: scheme.foreground,
                     ),
                   ),
                   Text(
                     widget.schemaName,
                     style: TextStyle(
                       fontSize: AppDensity.secondaryFontSize,
-                      color: colors.textMuted,
+                      color: scheme.mutedForeground,
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: AppSpacing.space2),
-            const OutlinedButton(onPressed: null, child: Text('新建连接')),
+            const Button.outline(onPressed: null, child: Text('新建连接')),
           ],
         ),
       ),
@@ -157,17 +162,18 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
   }
 
   // [p00-001/R5] 加载中只在表格区显示进度指示，不显示表格、数据行与数量统计。
-  Widget _loading(AppPalette colors) {
-    return Center(
+  // [p00-007/R1] 加载指示改用 shadcn_flutter 的 CircularProgressIndicator。
+  Widget _loading() {
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.space4),
-        child: CircularProgressIndicator(color: colors.accent, strokeWidth: 2),
+        padding: EdgeInsets.all(AppSpacing.space4),
+        child: CircularProgressIndicator(),
       ),
     );
   }
 
   // [p00-001/R6] 失败文案把消息与集中错误码拼成同一段，不展示 cause 或驱动异常原文。
-  Widget _failed(AppPalette colors, AppFailure failure) {
+  Widget _failed(ColorScheme scheme, AppFailure failure) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.space4),
@@ -175,7 +181,7 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
           '${failure.message}（错误码：${failure.code}）',
           style: TextStyle(
             fontSize: AppDensity.bodyFontSize,
-            color: colors.error,
+            color: scheme.destructive,
           ),
         ),
       ),
@@ -184,9 +190,9 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
 
   // [p00-001/R4] 已加载但无记录时不显示数量统计，六列表头与空态提示交给表格区。
   // [p00-001/R7] 有数据时显示 N 张表，N 取自实际渲染的行数；空、加载与失败态都不显示。
-  Widget _loaded(AppPalette colors, List<PgTable> tables) {
-    final ordered = _controller.sorted(tables);
-    final hasRows = ordered.isNotEmpty;
+  Widget _loaded(ColorScheme scheme, List<PgTable> tables) {
+    final List<PgTable> ordered = _controller.sorted(tables);
+    final bool hasRows = ordered.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -200,11 +206,11 @@ class _SchemaTablesPageState extends State<SchemaTablesPage> {
               '${ordered.length} 张表',
               style: TextStyle(
                 fontSize: AppDensity.secondaryFontSize,
-                color: colors.textMuted,
+                color: scheme.mutedForeground,
               ),
             ),
           ),
-        if (hasRows) Container(height: 1, color: colors.border),
+        if (hasRows) Container(height: 1, color: scheme.border),
         Expanded(
           child: SchemaTablesView(
             rows: ordered,

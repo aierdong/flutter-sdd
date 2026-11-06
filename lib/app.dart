@@ -1,13 +1,13 @@
-// spec: p00-001
+// spec: p00-001, p00-007
 // layer: core
-// covers: p00-001/R1
+// covers: p00-001/R1, p00-007/R1, p00-007/R3
 
-import 'package:flutter/material.dart';
 import 'package:flutter_sdd/core/errors/app_failure.dart';
 import 'package:flutter_sdd/core/errors/failure_codes.dart';
 import 'package:flutter_sdd/core/theme/app_theme.dart';
 import 'package:flutter_sdd/domain/pg_table.dart';
 import 'package:flutter_sdd/ui/schema_tables/schema_tables_page.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// 演示状态。默认 `data`。
 enum SchemaTablesDemoState { data, empty, loading, error }
@@ -99,15 +99,18 @@ final class SchemaTablesApp extends StatelessWidget {
   final List<PgTable>? tables;
 
   // [p00-001/R1] 首页固定为单 schema 表列表页，不再挂载模板计数器。
+  // [p00-007/R1] 应用根改用 shadcn_flutter 的 ShadcnApp，不再由 Material 的应用根承载。
+  // [p00-007/R3] 浅色、深色主题交给应用根按系统模式选择，页面内不提供主题开关。
   @override
   Widget build(BuildContext context) {
     final resolvedState =
         state ?? demoStateFrom(const String.fromEnvironment('DEMO_STATE'));
-    return MaterialApp(
+    return ShadcnApp(
       title: 'PostgreSQL 结构浏览器',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
       home: SchemaTablesPage(
         connectionName: demoConnectionName,
         databaseName: demoDatabaseName,

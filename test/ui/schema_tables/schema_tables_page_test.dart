@@ -1,85 +1,23 @@
-// spec: p00-001
+// spec: p00-001, p00-007
 // layer: test
-// covers: p00-001/R2, p00-001/R4, p00-001/R5, p00-001/R6, p00-001/R7, p00-001/R8, p00-001/R11
+// covers: p00-001/R2, p00-001/R4, p00-001/R5, p00-001/R6, p00-001/R7, p00-001/R8, p00-001/R11, p00-007/R1, p00-007/R4
 
-import 'package:flutter/material.dart';
 import 'package:flutter_sdd/core/errors/app_failure.dart';
-import 'package:flutter_sdd/core/theme/app_theme.dart';
 import 'package:flutter_sdd/domain/pg_table.dart';
 import 'package:flutter_sdd/ui/schema_tables/schema_tables_page.dart';
+import 'package:flutter_sdd/ui/schema_tables/widgets/schema_tables_view.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 
-/// 故意乱序的输入：类型、列数、估算行数与大小都不随表名递增，大小为跨单位取值。
-const List<PgTable> _rows = <PgTable>[
-  PgTable(
-    name: 'alpha',
-    relationKind: 'View',
-    description: '第一条记录',
-    columnCount: 3,
-    estimatedRows: 200,
-    sizeBytes: 5242880,
-  ),
-  PgTable(
-    name: 'bravo',
-    relationKind: 'Table',
-    description: '第二条记录',
-    columnCount: 5,
-    estimatedRows: 10,
-    sizeBytes: 900,
-  ),
-  PgTable(
-    name: 'delta',
-    relationKind: 'Partitioned table',
-    description: '第三条记录',
-    columnCount: 1,
-    estimatedRows: 3000,
-    sizeBytes: 40960,
-  ),
-];
-
-Widget _wrap(Widget page) {
-  return MaterialApp(theme: AppTheme.light(), home: page);
-}
-
-Widget _page({
-  String connectionName = 'Local dev',
-  String databaseName = 'myapp',
-  String schemaName = 'public',
-  SchemaTablesState state = const SchemaTablesLoaded(_rows),
-}) {
-  return SchemaTablesPage(
-    connectionName: connectionName,
-    databaseName: databaseName,
-    schemaName: schemaName,
-    state: state,
-  );
-}
-
-/// 桌面窗口尺寸，用于需要点中右侧列的交互检查。
-void _useDesktopView(WidgetTester tester) {
-  tester.view.physicalSize = const Size(1200, 800);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-}
-
-/// 按从上到下的顺序核对数据行。
-void _expectRowOrder(WidgetTester tester, List<String> names) {
-  for (var index = 0; index < names.length - 1; index += 1) {
-    expect(
-      tester.getTopLeft(find.text(names[index])).dy,
-      lessThan(tester.getTopLeft(find.text(names[index + 1])).dy),
-    );
-  }
-}
+import '../../support/schema_tables_harness.dart';
 
 void main() {
   testWidgets('[p00-001/R2] 页头显示连接名、数据库名与 schema 名，按钮禁用且无敏感字段', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      _wrap(
-        _page(
+      wrapInApp(
+        schemaTablesPage(
           connectionName: 'Staging',
           databaseName: 'analytics',
           schemaName: 'reporting',
@@ -90,8 +28,8 @@ void main() {
     expect(find.text('Staging · analytics'), findsOneWidget);
     expect(find.text('reporting'), findsOneWidget);
 
-    final OutlinedButton button = tester.widget<OutlinedButton>(
-      find.widgetWithText(OutlinedButton, '新建连接'),
+    final Button button = tester.widget<Button>(
+      find.widgetWithText(Button, '新建连接'),
     );
     expect(button.onPressed, isNull);
 
@@ -109,7 +47,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
-      _wrap(_page(state: const SchemaTablesLoaded(<PgTable>[]))),
+      wrapInApp(schemaTablesPage(state: const SchemaTablesLoaded(<PgTable>[]))),
     );
 
     expect(find.text('Local dev · myapp'), findsOneWidget);
@@ -118,12 +56,14 @@ void main() {
     for (final String label in <String>['表名', '类型', '描述', '列数', '估算行数', '大小']) {
       expect(find.textContaining(label), findsOneWidget);
     }
-    expect(find.text('该 schema 下暂无表。'), findsOneWidget);
+    expect(find.text(SchemaTablesView.emptyMessage), findsOneWidget);
     expect(find.textContaining('张表'), findsNothing);
   });
 
   testWidgets('[p00-001/R5] 加载中只在表格区显示进度指示', (WidgetTester tester) async {
-    await tester.pumpWidget(_wrap(_page(state: const SchemaTablesLoading())));
+    await tester.pumpWidget(
+      wrapInApp(schemaTablesPage(state: const SchemaTablesLoading())),
+    );
     await tester.pump();
 
     expect(find.text('Local dev · myapp'), findsOneWidget);
@@ -141,7 +81,7 @@ void main() {
       cause: 'SocketException: password=secret@localhost:5432',
     );
     await tester.pumpWidget(
-      _wrap(_page(state: const SchemaTablesFailed(failure))),
+      wrapInApp(schemaTablesPage(state: const SchemaTablesFailed(failure))),
     );
 
     expect(find.text('加载表失败（错误码：FSD-TABLE-001）'), findsOneWidget);
@@ -152,11 +92,11 @@ void main() {
   });
 
   testWidgets('[p00-001/R7] 数量统计等于实际渲染的行数', (WidgetTester tester) async {
-    await tester.pumpWidget(_wrap(_page()));
+    await tester.pumpWidget(wrapInApp(schemaTablesPage()));
     expect(find.text('3 张表'), findsOneWidget);
 
     await tester.pumpWidget(
-      _wrap(_page(state: const SchemaTablesLoaded(<PgTable>[]))),
+      wrapInApp(schemaTablesPage(state: const SchemaTablesLoaded(<PgTable>[]))),
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('张表'), findsNothing);
@@ -165,12 +105,12 @@ void main() {
   testWidgets('[p00-001/R8] 五列按字典序、数值与原始字节排序，描述不可排序', (
     WidgetTester tester,
   ) async {
-    _useDesktopView(tester);
-    await tester.pumpWidget(_wrap(_page()));
+    useViewSize(tester, const Size(1200, 800));
+    await tester.pumpWidget(wrapInApp(schemaTablesPage()));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('表名 ▲'), findsOneWidget);
-    _expectRowOrder(tester, <String>['alpha', 'bravo', 'delta']);
+    expectRowOrder(tester, <String>['alpha', 'bravo', 'delta']);
 
     for (final (String label, List<String> order) in <(String, List<String>)>[
       ('类型', <String>['delta', 'bravo', 'alpha']),
@@ -181,7 +121,7 @@ void main() {
       await tester.tap(find.textContaining(label));
       await tester.pumpAndSettle();
       expect(find.textContaining('$label ▲'), findsOneWidget);
-      _expectRowOrder(tester, order);
+      expectRowOrder(tester, order);
     }
 
     // 大小按原始字节比较：显示文字的升序是 40 KB、5 MB、900 B，与字节升序不同。
@@ -191,26 +131,26 @@ void main() {
     await tester.tap(find.textContaining('大小'));
     await tester.pumpAndSettle();
     expect(find.textContaining('大小 ▼'), findsOneWidget);
-    _expectRowOrder(tester, <String>['alpha', 'delta', 'bravo']);
+    expectRowOrder(tester, <String>['alpha', 'delta', 'bravo']);
 
     expect(
-      find.ancestor(of: find.text('描述'), matching: find.byType(InkWell)),
+      find.ancestor(of: find.text('描述'), matching: find.byType(Button)),
       findsNothing,
     );
     await tester.tap(find.text('描述'));
     await tester.pumpAndSettle();
     expect(find.textContaining('大小 ▼'), findsOneWidget);
-    _expectRowOrder(tester, <String>['alpha', 'delta', 'bravo']);
+    expectRowOrder(tester, <String>['alpha', 'delta', 'bravo']);
   });
 
   testWidgets('[p00-001/R11] 替换连接信息与表记录后页面随之更新', (WidgetTester tester) async {
-    await tester.pumpWidget(_wrap(_page()));
+    await tester.pumpWidget(wrapInApp(schemaTablesPage()));
     expect(find.text('Local dev · myapp'), findsOneWidget);
     expect(find.text('3 张表'), findsOneWidget);
 
     await tester.pumpWidget(
-      _wrap(
-        _page(
+      wrapInApp(
+        schemaTablesPage(
           connectionName: 'Prod',
           databaseName: 'warehouse',
           schemaName: 'sales',
@@ -236,15 +176,56 @@ void main() {
   });
 
   testWidgets('[p00-001/R11] 800×600 视口下页面无布局溢出', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    await tester.pumpWidget(_wrap(_page()));
+    useViewSize(tester, const Size(800, 600));
+    await tester.pumpWidget(wrapInApp(schemaTablesPage()));
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
     expect(find.text('3 张表'), findsOneWidget);
+  });
+
+  testWidgets('[p00-007/R1] 页头按钮与加载指示来自 shadcn_flutter，页面没有主题开关', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(wrapInApp(schemaTablesPage()));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(Button, '新建连接'), findsOneWidget);
+    expect(find.text('新建连接'), findsOneWidget);
+
+    await tester.pumpWidget(
+      wrapInApp(schemaTablesPage(state: const SchemaTablesLoading())),
+    );
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    expect(find.byType(Switch), findsNothing);
+    expect(find.textContaining('主题'), findsNothing);
+  });
+
+  testWidgets('[p00-007/R4] 系统模式变化只换外观，排序方向与横向滚动位置保持', (
+    WidgetTester tester,
+  ) async {
+    useViewSize(tester, const Size(800, 600));
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await tester.pumpWidget(wrapInApp(schemaTablesPage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.textContaining('列数'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('列数 ▲'), findsOneWidget);
+    expectRowOrder(tester, <String>['delta', 'alpha', 'bravo']);
+
+    await tester.drag(find.byType(SchemaTablesView), const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    final double offset = horizontalPosition(tester).pixels;
+    expect(offset, greaterThan(0));
+
+    await setSystemBrightness(tester, Brightness.dark);
+
+    expect(find.textContaining('列数 ▲'), findsOneWidget);
+    expectRowOrder(tester, <String>['delta', 'alpha', 'bravo']);
+    expect(horizontalPosition(tester).pixels, offset);
+    expect(find.text('3 张表'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

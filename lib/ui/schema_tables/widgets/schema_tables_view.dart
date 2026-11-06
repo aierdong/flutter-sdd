@@ -1,13 +1,12 @@
-// spec: p00-001
+// spec: p00-001, p00-007
 // layer: ui
-// covers: p00-001/R3, p00-001/R4, p00-001/R9, p00-001/R10
+// covers: p00-001/R3, p00-001/R4, p00-001/R9, p00-001/R10, p00-007/R2, p00-007/R4
 
-import 'package:flutter/material.dart';
 import 'package:flutter_sdd/core/theme/app_density.dart';
 import 'package:flutter_sdd/core/theme/app_spacing.dart';
-import 'package:flutter_sdd/core/theme/app_theme.dart';
 import 'package:flutter_sdd/domain/pg_table.dart';
 import 'package:flutter_sdd/ui/schema_tables/schema_tables_controller.dart';
+import 'package:shadcn_flutter/shadcn_flutter.dart';
 
 /// 一列的表头文案、固定宽度与对应的排序列。`sortColumn` 为 `null` 表示不可排序。
 final class _Column {
@@ -27,13 +26,8 @@ const List<_Column> _columns = <_Column>[
   _Column('大小', 100, SchemaSortColumn.size),
 ];
 
-final double _totalWidth = _columns.fold<double>(
-  0,
-  (sum, column) => sum + column.width,
-);
-
 /// 表格区域：六列表头、数据行或空态表体，并提供横向与纵向滚动。
-final class SchemaTablesView extends StatelessWidget {
+final class SchemaTablesView extends StatefulWidget {
   const SchemaTablesView({
     super.key,
     required this.rows,
@@ -41,12 +35,6 @@ final class SchemaTablesView extends StatelessWidget {
     required this.ascending,
     required this.onSort,
   });
-
-  /// 横向滚动容器，供滚动行为检查定位。
-  static const Key horizontalScrollKey = Key('schema-tables-horizontal');
-
-  /// 数据行纵向滚动容器，供滚动行为检查定位。
-  static const Key verticalScrollKey = Key('schema-tables-vertical');
 
   /// 空态提示文案。
   static const String emptyMessage = '该 schema 下暂无表。';
@@ -63,129 +51,122 @@ final class SchemaTablesView extends StatelessWidget {
   /// 表头排序动作。
   final ValueChanged<SchemaSortColumn> onSort;
 
-  // [p00-001/R9] 表格区提供横向与纵向滚动：列宽固定，长文本换行不截断，全部行都构建。
+  @override
+  State<SchemaTablesView> createState() => _SchemaTablesViewState();
+}
+
+class _SchemaTablesViewState extends State<SchemaTablesView> {
+  // [p00-007/R4] 双向滚动位置由本视图持有的控制器维护；主题变化只重建外观，偏移不重置。
+  final ScrollController _verticalScroll = ScrollController();
+  final ScrollController _horizontalScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _verticalScroll.dispose();
+    _horizontalScroll.dispose();
+    super.dispose();
+  }
+
+  // [p00-007/R2] 六列表格由 shadcn_flutter 的 Table 绘制，组件自带的行悬停与视口裁剪保持默认。
+  // [p00-001/R9] 六列定宽、单元格文本换行不截断，超出窗口时横向滚动，行多时纵向滚动。
   @override
   Widget build(BuildContext context) {
-    final colors = AppPalette.of(context);
-    return SingleChildScrollView(
-      key: horizontalScrollKey,
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: _totalWidth,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _headerRow(colors),
-            Container(height: 1, color: colors.border),
-            if (rows.isEmpty)
-              _emptyBody(colors)
-            else
-              Expanded(
-                child: SingleChildScrollView(
-                  key: verticalScrollKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      for (final row in rows) _dataRow(row, colors),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Table(
+      verticalController: _verticalScroll,
+      horizontalController: _horizontalScroll,
+      columnWidths: <int, TableSize>{
+        for (final (int index, _Column column) in _columns.indexed)
+          index: FixedTableSize(column.width),
+      },
+      rows: <TableRow>[
+        TableHeader(cells: _headerCells(scheme)),
+        if (widget.rows.isEmpty)
+          TableRow(cells: <TableCell>[_emptyCell(scheme)])
+        else
+          for (final PgTable table in widget.rows) _dataRow(table, scheme),
+      ],
     );
   }
 
   // [p00-001/R4] 没有表时保留六列表头，只在表体显示空态提示。
-  Widget _emptyBody(AppPalette colors) {
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.space3),
-      child: Text(
-        emptyMessage,
-        style: TextStyle(
-          fontSize: AppDensity.bodyFontSize,
-          color: colors.textMuted,
-        ),
-      ),
-    );
-  }
-
-  Widget _headerRow(AppPalette colors) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.space1),
-      child: Row(
-        children: <Widget>[
-          for (final column in _columns) _headerCell(column, colors),
-        ],
-      ),
-    );
-  }
-
-  Widget _headerCell(_Column column, AppPalette colors) {
-    final sortColumnOfCell = column.sortColumn;
-    final cell = SizedBox(
-      width: column.width,
+  TableCell _emptyCell(ColorScheme scheme) {
+    return TableCell(
+      columnSpan: _columns.length,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.space2,
-          vertical: AppSpacing.space1,
-        ),
+        padding: const EdgeInsets.all(AppSpacing.space3),
         child: Text(
-          _headerLabel(column, sortColumnOfCell),
+          SchemaTablesView.emptyMessage,
           style: TextStyle(
-            fontSize: AppDensity.regionTitleFontSize,
-            fontWeight: AppDensity.regionTitleWeight,
-            color: colors.text,
+            fontSize: AppDensity.bodyFontSize,
+            color: scheme.mutedForeground,
           ),
         ),
       ),
     );
-    if (sortColumnOfCell == null) {
-      return cell;
-    }
-    return InkWell(onTap: () => onSort(sortColumnOfCell), child: cell);
   }
 
-  String _headerLabel(_Column column, SchemaSortColumn? sortable) {
-    if (sortable == null || sortable != sortColumn) {
-      return column.label;
-    }
-    return '${column.label} ${ascending ? '▲' : '▼'}';
+  List<TableCell> _headerCells(ColorScheme scheme) {
+    return <TableCell>[
+      for (final _Column column in _columns)
+        TableCell(child: _headerCell(column, scheme)),
+    ];
   }
 
-  // [p00-001/R3] 每行逐格取自传入记录：空描述显示 —，大小按 1024 进位的人类可读单位。
-  // [p00-001/R10] 数据行不挂点击、悬停或导航处理，保持只读展示。
-  Widget _dataRow(PgTable table, AppPalette colors) {
-    final style = TextStyle(
-      fontSize: AppDensity.bodyFontSize,
-      color: colors.text,
-    );
-    return Container(
-      constraints: const BoxConstraints(minHeight: AppDensity.rowHeight),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.border)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          for (final (index, column) in _columns.indexed)
-            _dataCell(_cellText(table, index), column.width, style),
-        ],
+  Widget _headerCell(_Column column, ColorScheme scheme) {
+    final Text label = Text(
+      _headerLabel(column),
+      style: TextStyle(
+        fontSize: AppDensity.regionTitleFontSize,
+        fontWeight: AppDensity.regionTitleWeight,
+        color: scheme.foreground,
       ),
     );
-  }
-
-  Widget _dataCell(String text, double width, TextStyle style) {
-    return SizedBox(
-      width: width,
-      child: Padding(
+    final SchemaSortColumn? sortColumn = column.sortColumn;
+    if (sortColumn == null) {
+      return Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.space2,
           vertical: AppSpacing.space1,
         ),
-        child: Text(text, style: style),
-      ),
+        child: label,
+      );
+    }
+    return Button.ghost(
+      onPressed: () => widget.onSort(sortColumn),
+      alignment: Alignment.centerLeft,
+      child: label,
+    );
+  }
+
+  String _headerLabel(_Column column) {
+    final SchemaSortColumn? sortColumn = column.sortColumn;
+    if (sortColumn == null || sortColumn != widget.sortColumn) {
+      return column.label;
+    }
+    return '${column.label} ${widget.ascending ? '▲' : '▼'}';
+  }
+
+  // [p00-001/R3] 每行逐格取自传入记录：空描述显示 —，大小按 1024 进位的人类可读单位。
+  // [p00-001/R10] 数据行不挂点击、导航或详情处理，只保留组件自带的行悬停外观。
+  TableRow _dataRow(PgTable table, ColorScheme scheme) {
+    final TextStyle style = TextStyle(
+      fontSize: AppDensity.bodyFontSize,
+      color: scheme.foreground,
+    );
+    return TableRow(
+      cells: <TableCell>[
+        for (int index = 0; index < _columns.length; index += 1)
+          TableCell(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.space2,
+                vertical: AppSpacing.space1,
+              ),
+              child: Text(_cellText(table, index), style: style),
+            ),
+          ),
+      ],
     );
   }
 
@@ -202,7 +183,7 @@ final class SchemaTablesView extends StatelessWidget {
   }
 
   String _descriptionText(String? description) {
-    final text = description?.trim() ?? '';
+    final String text = description?.trim() ?? '';
     return text.isEmpty ? '—' : text;
   }
 }
@@ -213,14 +194,14 @@ String formatByteSize(int bytes) {
     return '$bytes B';
   }
   const List<String> units = <String>['KB', 'MB', 'GB', 'TB'];
-  var value = bytes / 1024;
-  var unitIndex = 0;
+  double value = bytes / 1024;
+  int unitIndex = 0;
   while (value >= 1024 && unitIndex < units.length - 1) {
     value /= 1024;
     unitIndex += 1;
   }
-  final fixed = value.toStringAsFixed(1);
-  final trimmed = fixed.endsWith('.0')
+  final String fixed = value.toStringAsFixed(1);
+  final String trimmed = fixed.endsWith('.0')
       ? fixed.substring(0, fixed.length - 2)
       : fixed;
   return '$trimmed ${units[unitIndex]}';
