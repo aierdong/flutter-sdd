@@ -48,7 +48,10 @@ from typing import Dict, List, Optional, Tuple
 # 这些是本 skill 自己的规则，与 ../SKILL.md、../rules/dimensions.md 逐字对应，
 # 改一处必须同步另一处。
 
-# plan 的状态机：draft（摘要待确认）→ design-ok（摘要已确认）→ approved（可实现）→ stale（spec 变了）
+# plan 的状态机：draft（只有摘要，待确认）→ design-ok（摘要已确认）→ approved（可实现）→ stale（spec 变了）
+# 计划自身修订时，Agent 先降级再改内容：重开方案 approved → draft 并清空第 3–6 节（L02 强制）；
+# 只重开设计与任务 approved → design-ok。勾选任务、补记核查记录不改变状态。
+# stale 恢复：spec 重新批准后，方案未变 → design-ok；方案要调整 → draft 并清空第 3–6 节。
 PLAN_STATUS = ('draft', 'design-ok', 'approved', 'stale')
 
 # 头部必须有的两项。故意不含 commit SHA / tag：提交前拿不到 SHA，填它会造成"改文档→再提交"的死循环。

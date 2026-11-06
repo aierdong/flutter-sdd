@@ -40,6 +40,6 @@ flutter test
 
 ## 流程技能现状
 
-- 已有：`sdd-requirement`、`sdd-plan`，各自包含规则、模板和校验脚本。
-- 待建：`sdd-impl`、`sdd-review` 及对应模板。
+- 已有：`sdd-requirement`、`sdd-plan`、`sdd-impl`、`sdd-review`，各自包含规则、模板和校验脚本。
+- 待建：无。
 - 已有 spec 见 `specs/`，不在流程入口逐条维护。

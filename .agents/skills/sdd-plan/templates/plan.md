@@ -16,7 +16,11 @@ A、B 各最多一次编写、两轮修改、三次独立核查。核查者只�
 - Spec：`pNN-NNN-<slug>`（spec v1 / approved）
 - Status：`draft`
 
-<!-- draft：方案待确认；design-ok：方案已确认，完整计划尚待检查与批准；approved：用户已允许实现；stale：需求变化，须重新确认。 -->
+<!--
+状态值只有四个。draft：只有方案摘要，正在等用户决定方案，第 3–6 节必须为空。design-ok：方案已确认，设计与任务尚待检查与用户批准。approved：用户已允许实现。stale：spec 实质变化，须先解决上游。
+
+计划获批准后要修订时，Agent 先把 Status 改为降级值，再改正文。重开方案改为 draft 并清空第 3–6 节；只重开设计与任务改为 design-ok，第 1–2 节不动；只勾选任务、补记第 6 节核查记录或改错别字不降级。spec 重新批准后，方案未受影响时把 stale 改为 design-ok，只重做开工确认；方案要调整时把 stale 改为 draft 并清空第 3–6 节。
+-->
 
 ## 1. 方案摘要
 
