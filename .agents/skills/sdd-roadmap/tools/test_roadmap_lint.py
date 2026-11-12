@@ -21,9 +21,9 @@ def document(route='p99', slices=None, order=None, extra=None, agreements=None,
     if slices is None:
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '用户看不到已有商品',
-             '做完后用户能': '用户打开列表页并看到全部商品', '前置': '无'},
+             '可观察结果': '用户打开列表页并看到全部商品', '前置': '无'},
             {'slug': 'product-edit', '编号': 'p99-002', '解决什么问题': '用户改不了商品信息',
-             '做完后用户能': '用户修改一条商品后看到列表更新',
+             '可观察结果': '用户修改一条商品后看到列表更新',
              '前置': '001（提供：可浏览的商品列表）'},
         ]
     if order is None:
@@ -177,9 +177,9 @@ class RoadmapLintTest(unittest.TestCase):
     def test_slug_must_be_unique(self):
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '看不到商品',
-             '做完后用户能': '看到列表', '前置': '无', '状态': '未开始'},
+             '可观察结果': '看到列表', '前置': '无', '状态': '未开始'},
             {'slug': 'product-list', '编号': 'p99-002', '解决什么问题': '改不了商品',
-             '做完后用户能': '改一条商品', '前置': '001（提供：列表）', '状态': '未开始'},
+             '可观察结果': '改一条商品', '前置': '001（提供：列表）', '状态': '未开始'},
         ]
         rep = self.check(slices=slices)
         self.assertTrue(any('slug' in item for item in rep.failures))
@@ -187,7 +187,7 @@ class RoadmapLintTest(unittest.TestCase):
     def test_numbers_must_be_continuous(self):
         slices = [
             {'slug': 'product-list', '编号': 'p99-002', '解决什么问题': '看不到商品',
-             '做完后用户能': '看到列表', '前置': '无', '状态': '未开始'},
+             '可观察结果': '看到列表', '前置': '无', '状态': '未开始'},
         ]
         self.assert_only('L06', slices=slices, order='002')
 
@@ -197,16 +197,16 @@ class RoadmapLintTest(unittest.TestCase):
     def test_require_must_exist(self):
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '看不到商品',
-             '做完后用户能': '看到列表', '前置': '007（提供：某能力）', '状态': '未开始'},
+             '可观察结果': '看到列表', '前置': '007（提供：某能力）', '状态': '未开始'},
         ]
         self.assert_only('L07', slices=slices, order='001')
 
     def test_require_needs_capability(self):
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '看不到商品',
-             '做完后用户能': '看到列表', '前置': '无', '状态': '未开始'},
+             '可观察结果': '看到列表', '前置': '无', '状态': '未开始'},
             {'slug': 'product-edit', '编号': 'p99-002', '解决什么问题': '改不了商品',
-             '做完后用户能': '改一条商品', '前置': '001', '状态': '未开始'},
+             '可观察结果': '改一条商品', '前置': '001', '状态': '未开始'},
         ]
         rep = self.check(slices=slices)
         self.assertTrue(any('提供' in item for item in rep.failures))
@@ -214,9 +214,9 @@ class RoadmapLintTest(unittest.TestCase):
     def test_cycle_is_reported(self):
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '看不到商品',
-             '做完后用户能': '看到列表', '前置': '002（提供：改后的数据）', '状态': '未开始'},
+             '可观察结果': '看到列表', '前置': '002（提供：改后的数据）', '状态': '未开始'},
             {'slug': 'product-edit', '编号': 'p99-002', '解决什么问题': '改不了商品',
-             '做完后用户能': '改一条商品', '前置': '001（提供：列表）', '状态': '未开始'},
+             '可观察结果': '改一条商品', '前置': '001（提供：列表）', '状态': '未开始'},
         ]
         rep = self.check(slices=slices)
         self.assertTrue(any('成环' in item for item in rep.failures))
@@ -235,7 +235,7 @@ class RoadmapLintTest(unittest.TestCase):
     def test_evidence_without_directory_fails(self):
         slices = [
             {'slug': 'product-list', '编号': 'p99-001', '解决什么问题': '看不到商品',
-             '做完后用户能': '看到列表', '前置': '无',
+             '可观察结果': '看到列表', '前置': '无',
              '交付证据': 'specs/p99-001-product-list/review.md'},
         ]
         rep = self.check(slices=slices, order='001')

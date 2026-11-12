@@ -55,7 +55,7 @@ SECTION_TITLES = {
     7: '整体验收记录',
 }
 
-SLICE_KEYS = ('编号', 'slug', '解决什么问题', '做完后用户能', '前置')
+SLICE_KEYS = ('编号', 'slug', '解决什么问题', '可观察结果', '前置')
 EVIDENCE_KEY = '交付证据'
 EXTRA_KEYS = ('编号', '附属于', '关系', '登记', '验证')
 AGREEMENT_KEYS = ('要求', '覆盖切片', '留给各切片 plan 决定')
