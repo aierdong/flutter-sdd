@@ -191,6 +191,48 @@ _ROW2 = re.compile(r'^\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|\s*$')
 # ─── 解析 ────────────────────────────────────────────────────────────────────
 
 
+def mask_structure(text: str) -> str:
+    """等长屏蔽注释与围栏代码，保留换行和原文切片位置。"""
+    out: List[str] = []
+    fence = ''
+    width = 0
+    in_comment = False
+
+    def blank(value: str) -> str:
+        return re.sub(r'[^\r\n]', ' ', value)
+
+    for line in text.splitlines(keepends=True):
+        if fence:
+            out.append(blank(line))
+            if re.fullmatch(r' {0,3}%s{%d,}[ \t]*(?:\r?\n)?' % (fence, width), line):
+                fence = ''
+            continue
+        opening = re.fullmatch(r' {0,3}(`{3,}|~{3,})([^\r\n]*)(?:\r?\n)?', line)
+        if not in_comment and opening and not (opening[1][0] == '`' and '`' in opening[2]):
+            fence, width = opening[1][0], len(opening[1])
+            out.append(blank(line))
+            continue
+        parts: List[str] = []
+        position = 0
+        while position < len(line):
+            if in_comment:
+                end = line.find('-->', position)
+                stop = len(line) if end < 0 else end + 3
+                parts.append(blank(line[position:stop]))
+                position = stop
+                in_comment = end < 0
+            else:
+                start = line.find('<!--', position)
+                if start < 0:
+                    parts.append(line[position:])
+                    break
+                parts.append(line[position:start])
+                position = start
+                in_comment = True
+        out.append(''.join(parts))
+    return ''.join(out)
+
+
 def clean_cell(raw: str) -> str:
     """单元格取值：去空白与反引号，让模板的 `既有` 和手写的 既有 等价。"""
     return raw.replace('`', '').strip()
@@ -212,8 +254,9 @@ def key_value_rows(text: str) -> Dict[str, str]:
 
 def header_fields(text: str, rep=None) -> Dict[str, str]:
     """读取计划头部字段。"""
+    text = mask_structure(text)
     cut = text.find('\n## 1.')
-    text = _COMMENT.sub('', text if cut < 0 else text[:cut])
+    text = text if cut < 0 else text[:cut]
     out = key_value_rows(text)
     seen = set()
     for line in text.splitlines():
@@ -237,7 +280,7 @@ def header_fields(text: str, rep=None) -> Dict[str, str]:
 def split_sections(text: str) -> Dict[int, str]:
     """按 `## <n>. ` 切出各节。"""
     out: Dict[int, str] = {}
-    marks = list(_SECTION.finditer(text))
+    marks = list(_SECTION.finditer(mask_structure(text)))
     for index, mark in enumerate(marks):
         end = marks[index + 1].start() if index + 1 < len(marks) else len(text)
         out[int(mark.group(1))] = text[mark.end():end]
@@ -247,7 +290,7 @@ def split_sections(text: str) -> Dict[int, str]:
 def split_subsections(section: str) -> Dict[str, str]:
     """按 `### 3.2 ` 切出子节，用于单独看决策表。"""
     out: Dict[str, str] = {}
-    marks = list(_SUBSECTION.finditer(section))
+    marks = list(_SUBSECTION.finditer(mask_structure(section)))
     for index, mark in enumerate(marks):
         end = marks[index + 1].start() if index + 1 < len(marks) else len(section)
         out[mark.group(1)] = section[mark.end():end]
@@ -288,7 +331,7 @@ def substantive_lines(section: str) -> List[str]:
 def grid_rows(section: str) -> List[List[str]]:
     """解析表格式多条目的表格，返回数据行（去掉表头与分隔行）。"""
     rows: List[List[str]] = []
-    for line in _COMMENT.sub('', section).split('\n'):
+    for line in mask_structure(section).split('\n'):
         stripped = line.strip()
         if not stripped.startswith('|') or not stripped.endswith('|'):
             continue
@@ -301,7 +344,7 @@ def grid_rows(section: str) -> List[List[str]]:
 
 def record_rows(section: str, fields: Tuple[str, ...], rep=None, code='L04') -> List[List[str]]:
     """把记录直接解析为有序值，不序列化为表格；管道和反引号均保留。"""
-    section = _COMMENT.sub('', section)
+    section = mask_structure(section)
     marks = list(re.finditer(r'^####[ \t]+([^\n]+)', section, re.MULTILINE))
     if not marks:
         if re.search(r'^-\s+(?:%s)[：:]' % '|'.join(map(re.escape, fields)), section, re.MULTILINE):
@@ -334,7 +377,7 @@ def record_rows(section: str, fields: Tuple[str, ...], rep=None, code='L04') -> 
                     rep.fail(code, '记录「%s」字段「%s」重复' % (mark[1], key))
                 values[key] = value.strip()
                 current = key
-            elif line.startswith(('  ', '\t')) and current is not None:
+            elif line.strip() and line.startswith(('  ', '\t')) and current is not None:
                 values[current] += '\n' + line.strip()
             elif line.strip() and rep is not None:
                 rep.fail(code, '记录「%s」有无法解析的行：%s' % (mark[1], line.strip()))
@@ -347,8 +390,8 @@ def record_rows(section: str, fields: Tuple[str, ...], rep=None, code='L04') -> 
 
 def seen_block(section: str) -> Optional[str]:
     """覆盖核对由独立粗体标题引入，遇到下一个粗体标题结束。"""
-    hit = re.search(r'^\*\*覆盖核对\*\*[^\n]*\n(.*?)(?=^\*\*|\Z)', section, re.MULTILINE | re.DOTALL)
-    return hit[1] if hit else None
+    hit = re.search(r'^\*\*覆盖核对\*\*[^\n]*\n(.*?)(?=^\*\*|\Z)', mask_structure(section), re.MULTILINE | re.DOTALL)
+    return section[hit.start(1):hit.end(1)] if hit else None
 
 
 def without_seen(section: str) -> str:
@@ -366,7 +409,7 @@ RISK_FIELDS = ('风险', '触发信号', '应对')
 
 def task_blocks(section: str) -> List[Tuple[int, str]]:
     """按 `- [ ] **T1**` 切出任务块。模板示例写在注释里，先剥掉注释再解析。"""
-    section = _COMMENT.sub('', section)
+    section = mask_structure(section)
     marks = list(_TASK_MARK.finditer(section))
     out: List[Tuple[int, str]] = []
     for index, mark in enumerate(marks):
@@ -602,7 +645,7 @@ def _follow_items(section: str) -> List[str]:
     """
     items: List[str] = []
     in_table = False
-    for raw in _COMMENT.sub('', section).split('\n'):
+    for raw in mask_structure(section).split('\n'):
         line = raw.strip()
         if not line:
             in_table = False
@@ -628,6 +671,7 @@ def _check_follow(
     rep: Report, section: str, repo_root: str, plan_dir: str, overridden: set
 ) -> None:
     """2.2：每条一个主题，出处必须存在。用户可以跳读，但 Agent 得找得到。"""
+    section = mask_structure(section)
     if re.search(r'^####[ \t]+|^-\s+(?:出处|条款|要求)[：:]', section, re.MULTILINE):
         items = ['，'.join(row) for row in record_rows(section, FOLLOW_FIELDS, rep)]
     else:
@@ -1135,7 +1179,7 @@ def check_blocking(rep: Report, sections: Dict[int, str]) -> None:
         if not risk_rows or any(len(row) < 3 or any(clean_cell(cell) in ('', '—', '-') or re.fullmatch(r'<[^<>]+>', clean_cell(cell)) is not None for cell in row[:3]) for row in risk_rows):
             rep.fail('L08', '第 6 节必须有风险、触发信号和应对/回滚的非空数据行')
         # 只核记录存在；语义是否通过必须独立对证，不能把这行当作审查证据。
-        if not re.search(r'^\*\*对证\*\*[：:]\s*\S', _COMMENT.sub('', risks), re.MULTILINE):
+        if not re.search(r'^\*\*对证\*\*[：:]\s*\S', mask_structure(risks), re.MULTILINE):
             rep.fail('L08', '第 6 节缺对证记录；首轮 lint 前可记未运行，交付前必须实际完成')
     rep.ok('L08')
 
@@ -1144,7 +1188,7 @@ def check_spec_pending(rep: Report, spec_text: str) -> None:
     """L09 spec 第 7 节还有待决项时，plan 不该存在。"""
     sections = split_sections(spec_text)
     section7 = sections.get(7, '')
-    body = _COMMENT.sub('', section7)
+    body = mask_structure(section7)
     if re.search(r'^\d+\.\s+', body, re.MULTILINE):
         rep.fail('L09', 'spec.md 第 7 节还有待决问题——阶段 0 就该停下，回 sdd-requirement')
     else:
@@ -1154,7 +1198,7 @@ def check_spec_pending(rep: Report, spec_text: str) -> None:
 def check_spec_rs(rep: Report, spec_text: str) -> None:
     """从 spec 第 4 节取 R 编号，供 L06 核对覆盖。"""
     sections = split_sections(spec_text)
-    rep.spec_rs = ['R%s' % match.group(1) for match in _SPEC_R.finditer(sections.get(4, ''))]
+    rep.spec_rs = ['R%s' % match.group(1) for match in _SPEC_R.finditer(mask_structure(sections.get(4, '')))]
     if not rep.spec_rs:
         rep.fail('L06', 'spec.md 第 4 节没有 R 条目，无法核对覆盖')
 

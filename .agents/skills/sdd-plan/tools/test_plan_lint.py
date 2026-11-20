@@ -456,12 +456,8 @@ class PlanLintTests(unittest.TestCase):
         code, output = self.run_plan(text)
         self.assertEqual(code, 0, output)
 
-    def test_actual_template_filled_as_draft(self):
+    def filled_template(self):
         text = (TOOLS.parent / 'templates/plan.md').read_text(encoding='utf-8')
-        text = lint._COMMENT.sub('', text)
-        text = text[:text.index('## 3. 设计')] + '\n'.join(
-            '## %d. %s\n' % (number, title) for number, title in (
-                (3, '设计'), (4, '任务'), (5, 'R → 验证'), (6, '风险与回滚')))
         replacements = {
             '<spec slug>': 'demo-plan-ready', 'pNN-NNN-<slug>': READY.name,
             '<默认状态下的具体结果>': '跑一次导入命令，同目录下多出一个 report.tsv。',
@@ -480,7 +476,66 @@ class PlanLintTests(unittest.TestCase):
         }
         for before, after in replacements.items():
             text = text.replace(before, after)
+        return text
+
+    def test_actual_template_filled_as_draft(self):
+        text = lint._COMMENT.sub('', self.filled_template())
+        text = text[:text.index('## 3. 设计')] + '\n'.join(
+            '## %d. %s\n' % (number, title) for number, title in (
+                (3, '设计'), (4, '任务'), (5, 'R → 验证'), (6, '风险与回滚')))
         code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def test_actual_template_filled_as_complete_delivery(self):
+        text = self.filled_template().replace('- Status：`draft`', '- Status：`design-ok`')
+        text = text.replace('- <场景>：<Agent 按通行做法定下的做法>', '- 无。')
+        sections = lint.split_sections(text)
+        design = sections[3]
+        subs = lint.split_subsections(design)
+        content = {
+            '3.1': '\n**架构模式与边界**\n\n导入入口负责接收输入，报告生成负责解析记录并写出报告。\n'
+                   '\n```mermaid\nflowchart LR\n  入口[导入入口·已有] ==> 报告[报告生成·新增]\n```\n'
+                   '图例：箭头从调用方指向被调用方，不表示时间顺序。\n\n'
+                   '**组件说明**\n\n#### 导入入口：接收文件路径的已有命令\n'
+                   '- 状态：已有\n- 作用：接收输入路径并调用报告生成。\n'
+                   '- 代码位置：`bin/import.dart`，保留，不在本次改动范围。\n- 关键依赖：报告生成。\n\n'
+                   '#### 报告生成：解析记录并写出结果\n- 状态：新增\n'
+                   '- 作用：解析记录，收集失败原因并写出两列报告。\n'
+                   '- 代码位置：`lib/report.dart`\n- 关键依赖：无新增第三方库。\n\n'
+                   '**关键数据流或交互流程**\n\n```mermaid\nsequenceDiagram\n'
+                   '  participant 入口 as 导入入口\n  participant 报告 as 报告生成\n'
+                   '  入口->>报告: 输入路径\n  报告-->>入口: 报告写出完成\n```\n',
+            '3.2': '\n沿用第 2.1 节的报告格式例外，无新增取舍。\n',
+            '3.3': '\n**相关目录结构**\n\n```text\nbin/\n└── import.dart  # 保留\n'
+                   'lib/\n└── report.dart  # 新建\ntest/\n└── report_test.dart  # 新建\n'
+                   '```\n\n**逐文件职责**\n\n'
+                   '#### 报告实现\n- 文件：`lib/report.dart`\n- 操作：新建\n- 职责：解析并写出报告。\n\n'
+                   '#### 报告断言\n- 文件：`test/report_test.dart`\n- 操作：新建\n- 职责：文件与两列断言。\n',
+            '3.4': '\n不增加依赖，不修改其他配置。\n',
+        }
+        for key, body in subs.items():
+            design = design.replace(body, body + content[key], 1)
+        text = text.replace(sections[3], design, 1)
+        tasks = ('\n- [ ] **T1** 实现报告及断言\n'
+                 '  - 改动：`lib/report.dart`、`test/report_test.dart`\n'
+                 '  - 验证：—\n  - 覆盖：R1、R2\n  - 依赖：—\n\n'
+                 '- [ ] **T2** 检查报告\n  - 改动：—\n'
+                 '  - 验证：`flutter test test/report_test.dart` → 文件与两列断言通过。\n'
+                 '  - 执行者：主 Agent\n  - 覆盖：R1、R2\n  - 依赖：T1\n')
+        text = text.replace(sections[4], sections[4] + tasks, 1)
+        coverage = ''.join('\n#### %s 检查安排\n- R：%s\n- 任务：T1、T2\n'
+                           '- 自动验证：`flutter test test/report_test.dart` → 报告断言通过。\n'
+                           '- 手工步骤：—\n' % (rid, rid) for rid in ('R1', 'R2'))
+        text = text.replace(sections[5], sections[5] + coverage, 1)
+        text += ('\n#### 中断风险\n- 风险：报告中断写出。\n- 触发信号：文件行数不足。\n'
+                 '- 应对：移除不完整报告，保留输入后重新运行。\n\n**对证**：B，第1/3次，未运行。\n')
+        self.assertNotRegex(lint._COMMENT.sub('', text), r'<[^>]+>')
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+        without_diagrams = re.sub(r'```mermaid\n.*?\n```',
+                                  '流程简单，直接调用报告生成并等待写出完成，无需图示。',
+                                  text, flags=re.DOTALL)
+        code, output = self.run_plan(without_diagrams)
         self.assertEqual(code, 0, output)
 
     def test_default_decision_plain_item_is_legal(self):
@@ -494,6 +549,167 @@ class PlanLintTests(unittest.TestCase):
         text = text.replace('**需要用户决定的事项**：见 2.1 的 1 条。', '**无需用户决定**。')
         code, output = self.run_plan(text)
         self.assertEqual(code, 0, output)
+
+    def test_fence_mask_preserves_positions_and_original_section_content(self):
+        example = ('## 3. 设计\r\n### 3.1 结构\r\n```text\r\n'
+                   '## 4. 伪章节\r\n### 3.2 伪子节\r\n```\r\n'
+                   '### 3.2 决策\r\n真实内容\r\n## 4. 任务\r\n')
+        masked = lint.mask_structure(example)
+        self.assertEqual(len(masked), len(example))
+        self.assertEqual(lint.mask_structure(masked), masked)
+        record = '#### 示例\n- 命令：`run`\n```text\n伪续行\n```\n  真实续行\n'
+        self.assertEqual(lint.record_rows(record, ('命令',)), [['`run`\n真实续行']])
+        self.assertEqual([i for i, char in enumerate(masked) if char in '\r\n'],
+                         [i for i, char in enumerate(example) if char in '\r\n'])
+        sections = lint.split_sections(example)
+        self.assertEqual(set(sections), {3, 4})
+        self.assertIn('## 4. 伪章节', sections[3])
+        subs = lint.split_subsections(sections[3])
+        self.assertIn('### 3.2 伪子节', subs['3.1'])
+        self.assertEqual(subs['3.2'].strip(), '真实内容')
+
+    def test_fence_delimiters_and_indentation_boundaries(self):
+        for fence in ('```', '````', '~~~', '~~~~'):
+            for indent in range(4):
+                with self.subTest(fence=fence, indent=indent):
+                    prefix = ' ' * indent
+                    shorter = fence[:-1]
+                    other = '~' * len(fence) if fence[0] == '`' else '`' * len(fence)
+                    source = (prefix + fence + 'text\n## 8. 隐藏\n' + shorter + '\n'
+                              '## 7. 仍隐藏\n' + other + '\n## 6. 仍隐藏\n'
+                              + prefix + fence + fence[0] + ' \t\n## 1. 正文\n')
+                    self.assertEqual(set(lint.split_sections(source)), {1})
+        for invalid in ('    ```text', '\t```text', '``text', '```bad`info'):
+            with self.subTest(invalid=invalid):
+                self.assertIn(1, lint.split_sections(invalid + '\n## 1. 正文\n'))
+        for invalid_close in ('    ```', '``` trailing', '\t```'):
+            with self.subTest(invalid_close=invalid_close):
+                self.assertEqual(lint.split_sections('```\n' + invalid_close + '\n## 1. 隐藏\n'), {})
+        self.assertEqual(lint.mask_structure('~~~\n代码\n~~~'), '   \n  \n   ')
+        self.assertEqual(lint.split_sections('```\n## 1. 未闭合\n'), {})
+
+    def test_comment_fences_do_not_change_body_fence_state(self):
+        source = ('<!--\n```text\n## 9. 注释\n-->\n'
+                  '## 1. 正文\n```text\n<!--\n```\n## 2. 正文\n')
+        self.assertEqual(set(lint.split_sections(source)), {1, 2})
+        inline = '<!-- ``` -->\n## 1. 正文\n'
+        self.assertEqual(set(lint.split_sections(inline)), {1})
+        closed = '<!--\n~~~\n-->\n~~~text\n## 9. 代码\n~~~\n## 1. 正文\n'
+        self.assertEqual(set(lint.split_sections(closed)), {1})
+
+    def test_explanatory_diagrams_are_optional_and_may_repeat(self):
+        diagram = '\n```mermaid\nflowchart LR\n  输入 --> 报告\n```\n'
+        for fixed_fields in (False, True):
+            for count in (0, 1, 3):
+                with self.subTest(fixed_fields=fixed_fields, count=count):
+                    text = self.new_format() if fixed_fields else self.ready()
+                    text = text.replace('### 3.2 决策', diagram * count + '\n### 3.2 决策')
+                    code, output = self.run_plan(text)
+                    self.assertEqual(code, 0, output)
+
+    def test_fenced_headings_do_not_replace_real_sections_or_subsections(self):
+        fake = ('\n```text\n## 4. 伪任务章节\n### 3.3 伪影响文件\n'
+                '#### 伪记录\n- 文件：`fake.py`\n- 操作：新建\n- 职责：说明\n```\n')
+        for fixed_fields in (False, True):
+            text = self.new_format() if fixed_fields else self.ready()
+            text = text.replace('### 3.2 决策', fake + '\n### 3.2 决策')
+            code, output = self.run_plan(text)
+            self.assertEqual(code, 0, output)
+            self.assert_rejected(text.replace('## 4. 任务', '任务正文'), 'L02')
+            self.assert_rejected(text.replace('### 3.3 影响文件', '影响文件正文'), 'L08')
+
+    def test_directory_trees_before_between_and_after_file_records(self):
+        tree = ('\n~~~text\nproject/\n├── lib/report.dart\n└── test/report_test.dart\n'
+                '#### 伪文件\n- 文件：`fake.py`\n- 操作：新建\n- 职责：说明\n'
+                '| 文件 | 操作 | 职责 |\n|---|---|---|\n| `table.py` | 新建 | 说明 |\n~~~\n')
+        for fixed_fields in (False, True):
+            text = self.new_format() if fixed_fields else self.ready()
+            subsection = lint.split_subsections(lint.split_sections(text)[3])['3.3']
+            middle = subsection.index('#### 记录2' if fixed_fields else '| `test/report_test.dart`')
+            for position in (0, middle, len(subsection)):
+                with self.subTest(fixed_fields=fixed_fields, position=position):
+                    replacement = subsection[:position] + tree + subsection[position:]
+                    changed = text.replace(subsection, replacement)
+                    code, output = self.run_plan(changed)
+                    self.assertEqual(code, 0, output)
+                    self.assertEqual(lint.design_files(lint.split_sections(changed)[3]),
+                                     {'lib/report.dart', 'test/report_test.dart'})
+
+    def test_fenced_records_cannot_supply_missing_inventory_or_fields(self):
+        text = self.new_format()
+        subsection = lint.split_subsections(lint.split_sections(text)[3])['3.3']
+        for content in ('```text\n' + subsection + '\n```\n',
+                        subsection.replace('- 文件：`lib/report.dart`',
+                                           '```text\n- 文件：`lib/report.dart`\n```')):
+            with self.subTest(content=content):
+                self.assert_rejected(text.replace(subsection, content), 'L05')
+        old = self.ready()
+        table = lint.split_subsections(lint.split_sections(old)[3])['3.3']
+        self.assert_rejected(old.replace(table, '~~~text\n' + table + '\n~~~\n'), 'L05')
+
+    def test_fenced_task_examples_and_fields_are_not_tasks(self):
+        text = self.new_format()
+        fake = ('\n```text\n- [ ] **T99** 说明性任务\n'
+                '  - 改动：`fake.py`\n  - 验证：`fake`\n'
+                '  - 覆盖：R99\n  - 依赖：T99\n```\n')
+        for marker in ('- [ ] **T1**', '- [ ] **T2**', '## 5.'):
+            with self.subTest(marker=marker):
+                changed = text.replace(marker, fake + '\n' + marker, 1)
+                code, output = self.run_plan(changed)
+                self.assertEqual(code, 0, output)
+                self.assertEqual([tid for tid, _ in lint.task_blocks(lint.split_sections(changed)[4])], [1, 2])
+        section = lint.split_sections(text)[4]
+        self.assert_rejected(text.replace(section, '\n~~~text\n' + section + '\n~~~\n'), 'L05')
+        missing = text.replace('  - 覆盖：R1', '```text\n  - 覆盖：R1\n```', 1)
+        self.assert_rejected(missing, 'L05')
+
+    def test_fenced_coverage_and_risk_records_do_not_count(self):
+        for number, rule in ((5, 'L06'), (6, 'L08')):
+            text = self.new_format()
+            section = lint.split_sections(text)[number]
+            self.assert_rejected(text.replace(section, '\n```text\n' + section + '\n```\n'), rule)
+
+    def test_fenced_follow_examples_do_not_override_real_constraint_format(self):
+        text = self.ready().replace('### 2.2 Agent 遵循的既有规范',
+            '### 2.2 Agent 遵循的既有规范\n\n```text\n'
+            '#### 示例\n- 出处：missing.md\n- 条款：FAKE-01\n- 要求：说明\n```')
+        code, output = self.run_plan(text)
+        self.assertEqual(code, 0, output)
+
+    def test_draft_fenced_design_is_still_rejected(self):
+        original = (DRAFT / 'plan.md').read_text(encoding='utf-8')
+        for number in range(3, 7):
+            with self.subTest(number=number):
+                marker = '## %d.' % number
+                start = original.index('\n', original.index(marker))
+                text = (original[:start] + '\n```mermaid\nflowchart LR\nA --> B\n```\n'
+                        + original[start:])
+                code, output = self.run_plan(text, DRAFT)
+                self.assertEqual(code, 1, output)
+                self.assertIn('FAIL  L02', output)
+
+    def test_fenced_vague_words_are_still_rejected(self):
+        for word in lint.VAGUE_WORDS:
+            with self.subTest(word=word):
+                text = self.ready().replace('### 3.2 决策',
+                    '```text\n%s\n```\n\n### 3.2 决策' % word)
+                self.assert_rejected(text, 'L07')
+
+    def test_spec_examples_do_not_add_requirements_or_pending_questions(self):
+        spec = (READY / 'spec.md').read_text(encoding='utf-8')
+        spec = spec.replace('## 5.', '```text\n- **R99** 示例\n```\n\n## 5.')
+        spec += '\n~~~text\n1. 示例问题\n~~~\n'
+        code, output = self.run_plan(spec_text=spec)
+        self.assertEqual(code, 0, output)
+        missing = spec.replace('- [ ] **R1** 跑一次导入命令，同目录下写出 `report.tsv`。',
+                               '```text\n- [ ] **R1** 跑一次导入命令，同目录下写出 `report.tsv`。\n```')
+        code, output = self.run_plan(spec_text=missing)
+        self.assertEqual(code, 1, output)
+        self.assertIn('FAIL  L11', output)
+        pending = spec + '\n1. 真实待决问题\n'
+        code, output = self.run_plan(spec_text=pending)
+        self.assertEqual(code, 1, output)
+        self.assertIn('FAIL  L09', output)
 
     def test_forward_dependency(self):
         self.assert_rejected(self.ready().replace("  - 依赖：—", "  - 依赖：T2"), "L05")
