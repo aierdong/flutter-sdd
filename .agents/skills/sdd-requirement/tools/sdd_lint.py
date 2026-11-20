@@ -13,12 +13,12 @@
     L05  第 5 节每条「不做」带「理由：」
     L06  第 7 节每条待决问题带「维度：<ID>」与 A / B 两个选项；有待决问题不得批准
     L07  头部「附带交付」与 R 上的范畴标记互相登记
-    L08  成本字段十一项齐全；预算符合需求类型；追加合法；用量不超过批准额度
-    L09  覆盖矩阵恰好包含本类型必做维度；不适用有理由；待决状态与第 7 节双向对应
+    L08  成本字段十一项齐全；基础额度与工具预算符合需求类型；用量不超额度
+    L09  每个必检维度都有落点（提问或自主决定）；自主决定记录可追溯；待决与第 7 节双向对应
     L10  规范触碰清单存在；冲突项不许留在第 7 节
     L11  路线图与切片两个头部字段同填或同空；日志有路线图对照记录，结论允许继续
 
-脚本只检查固定格式和可计算的规则。
+脚本只检查固定格式和可计算的规则。它不判断某个维度该不该问，也不判断自主决定是否合适。
 人仍需判断需求条目（R）是否正确、取舍是否合理；脚本不能替代这些判断。
 
 退出码：0 全过 / 1 有 FAIL / 2 用法错误或文件缺失。
@@ -38,12 +38,16 @@ from typing import Dict, List, Optional, Tuple
 #
 # 这些规则属于本技能。维度和预算与 ../rules/dimensions.md 对应，修改时须同步。
 
-# 每种类型必做的维度 ID。
-REQUIRED_DIMS: Dict[str, List[str]] = {
+# 每种类型必须检查并留下记录的维度 ID。必检不等于必问：记录可以指向提问，也可以指向自主决定。
+CHECK_DIMS: Dict[str, List[str]] = {
     'new': ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'N1', 'N2', 'N3'],
     'extend': ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'E1', 'E2', 'E3', 'E4', 'E5'],
     'fix': ['D1', 'D6', 'F1', 'F2', 'F3', 'F4'],
 }
+
+# 向用户提出的不同问题数量上限。同一问题下的深挖追问不占这个额度。
+# 这些数字由本技能直接规定，不随维度数量变化；维度不是提问配额。
+BASE_QUESTION_BUDGET: Dict[str, int] = {'new': 12, 'extend': 14, 'fix': 9}
 
 # 阶段 1 事实收集的工具调用预算。
 TOOL_BUDGET: Dict[str, int] = {'new': 8, 'extend': 12, 'fix': 8}
@@ -70,15 +74,16 @@ BASE_HEAD_FIELDS = ('Spec', '类型', '上游', '附带交付', 'Status', '版�
 SPEC_ID_SHAPE = re.compile(r'^p\d{2}-\d{3}-[a-z0-9]+(?:-[a-z0-9]+)*$')
 VERSION_SHAPE = re.compile(r'^v\d+$')
 HEAD_STATUS = ('draft', 'approved', 'stale')
-MATRIX_STATUS = ('已覆盖', '不适用', '已推翻并说明', '待决')
+# 覆盖矩阵记录的是「这个维度怎样落地」，不是「有没有问用户」。
+MATRIX_STATUS = ('已问', '自主决定', '不适用', '已推翻并说明', '待决')
 TOUCH_STATUS = ('无冲突', '冲突', '不涉及')
 
 # 成本字段必须有十一行，顺序不限，缺一行就 FAIL。
 COST_KEYS = (
     '类型',
     '问题数',
-    '问题上限',
-    '问题追加',
+    '基础额度',
+    '深挖',
     '工具调用',
     '工具预算',
     '工具追加',
@@ -96,14 +101,16 @@ _PENDING_ITEM = re.compile(r'^\d+\.\s+', re.MULTILINE)
 _PENDING_DIM = re.compile(r'维度[：:]\s*`?([A-Z]\d)')
 _SCOPE_TAG = re.compile(r'\*\*范畴\*\*[：:]\s*([a-z]+)')
 _COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
+# 自主决定区的一行轻记录：编号 + 场景与做法。
+_AUTONOMOUS = re.compile(r'^-\s*(A\d+)\s+(.+)$', re.MULTILINE)
 
 
 # ─── 解析 ────────────────────────────────────────────────────────────────────
 
 
-def question_limit(spec_type: str) -> int:
-    """问题上限 = 本型必做维度数 + 3 次派生追问（new 12 / extend 14 / fix 9）。"""
-    return len(REQUIRED_DIMS.get(spec_type, ())) + 3
+def base_question_budget(spec_type: str) -> int:
+    """基础额度由需求类型直接规定（new 12 / extend 14 / fix 9），与维度数量无关。"""
+    return BASE_QUESTION_BUDGET.get(spec_type, 0)
 
 
 def clean_cell(raw: str) -> str:
@@ -211,6 +218,8 @@ class Report:
         self.spec_type = ''
         # 覆盖矩阵里每个维度的状态。
         self.matrix_status: Dict[str, str] = {}
+        # grill.md「自主决定」区里出现过的记录编号。
+        self.autonomous_ids: set = set()
         # 第 7 节列出的待决维度。
         self.pending_dims: List[str] = []
         # 第 4 节出现过的 R 编号，按出现顺序。
@@ -274,7 +283,7 @@ def check_head(rep: Report, head: Dict[str, str]) -> None:
         if key not in head:
             rep.fail('L01', 'spec.md 头部缺字段「%s」' % key)
     rep.spec_type = head.get('类型', '')
-    if rep.spec_type not in REQUIRED_DIMS:
+    if rep.spec_type not in CHECK_DIMS:
         rep.fail('L01', '类型必须是 new / extend / fix，实际「%s」' % rep.spec_type)
     spec_id = head.get('Spec', '')
     status = head.get('Status', '')
@@ -379,14 +388,15 @@ def check_extra(rep: Report, raw: str) -> None:
 
 
 def check_grill(rep: Report, text: str) -> None:
-    """成本基线、覆盖矩阵、规范触碰，与 spec.md 的类型和第 7 节交叉核对。"""
+    """成本基线、自主决定记录、覆盖矩阵、规范触碰，与 spec.md 的类型和第 7 节交叉核对。"""
     check_cost(rep, text)
+    check_autonomous(rep, text)
     check_matrix(rep, text)
     check_touch(rep, text)
 
 
 def check_cost(rep: Report, text: str) -> None:
-    """L08 成本字段十一项齐全、预算与型匹配、追加合法、用量不超授权。"""
+    """L08 成本字段齐全、额度与类型匹配、用量不超授权。深挖不占基础额度。"""
     cost_text = re.split(r'^## ', text, maxsplit=1, flags=re.MULTILINE)[0]
     cost = check_fields(rep, 'L08', cost_text, COST_KEYS, 'grill.md 成本字段')
 
@@ -395,28 +405,32 @@ def check_cost(rep: Report, text: str) -> None:
         rep.fail('L08', 'grill.md 的类型「%s」与 spec.md 的「%s」不一致' % (grill_type, rep.spec_type))
 
     asked = _int_or_none(cost.get('问题数'))
+    deep = _int_or_none(cost.get('深挖'))
     calls = _int_or_none(cost.get('工具调用'))
-    limit = _int_or_none(cost.get('问题上限'))
+    limit = _int_or_none(cost.get('基础额度'))
     budget = _int_or_none(cost.get('工具预算'))
 
-    if rep.spec_type in REQUIRED_DIMS:
-        expected_limit = question_limit(rep.spec_type)
+    for key, value in (('问题数', asked), ('深挖', deep), ('工具调用', calls)):
+        if key in cost and value is None:
+            rep.fail('L08', '%s「%s」不是整数' % (key, cost[key]))
+    if deep is not None and deep < 0:
+        rep.fail('L08', '深挖次数不能为负')
+
+    if rep.spec_type in CHECK_DIMS:
+        expected_limit = base_question_budget(rep.spec_type)
         if limit is not None and limit != expected_limit:
-            rep.fail('L08', '问题上限为 %d；按本类型必做维度数加 3，应为 %d' % (limit, expected_limit))
+            rep.fail('L08', '基础额度为 %d；%s 型应写 %d。它由技能直接规定，不按维度数推算'
+                     % (limit, rep.spec_type, expected_limit))
         expected_tool = TOOL_BUDGET.get(rep.spec_type, 0)
         if budget is not None and budget != expected_tool:
             rep.fail('L08', '工具预算写的是 %d，%s 型应为 %d' % (budget, rep.spec_type, expected_tool))
-    if '问题数' in cost and asked is None:
-        rep.fail('L08', '问题数「%s」不是整数' % cost['问题数'])
-    if '工具调用' in cost and calls is None:
-        rep.fail('L08', '工具调用「%s」不是整数' % cost['工具调用'])
 
-    q_extra = _allowance(rep, '问题追加', cost.get('问题追加', '—'))
     t_extra = _allowance(rep, '工具追加', cost.get('工具追加', '—'))
-    if asked is not None and limit is not None and asked > limit + q_extra:
+    if asked is not None and limit is not None and asked > limit:
         rep.fail(
             'L08',
-            '问题数 %d 超过上限 %d + 追加 %d，必须停下来问人：拆，还是再加 +4' % (asked, limit, q_extra),
+            '问题数 %d 超过基础额度 %d。同一问题下的追问记入「深挖」，不占额度；'
+            '确属新的实质分歧时停下，请用户决定是否拆 spec' % (asked, limit),
         )
     if calls is not None and budget is not None and calls > budget + t_extra:
         rep.fail(
@@ -425,11 +439,10 @@ def check_cost(rep: Report, text: str) -> None:
         )
 
     reason = cost.get('追加理由', '—')
-    if (q_extra > 0 or t_extra > 0) and reason in ('', '—'):
-        rep.fail('L08', '有追加额度时，必须在「追加理由」说明谁批准、为什么仍是同一件事')
-    no_extra = cost.get('问题追加', '—') == '—' and cost.get('工具追加', '—') == '—'
-    if no_extra and reason not in ('', '—'):
-        rep.fail('L08', '没有追加额度，但「追加理由」写了内容，两者矛盾')
+    if t_extra > 0 and reason in ('', '—'):
+        rep.fail('L08', '有工具追加额度时，必须在「追加理由」说明谁批准、为什么仍是同一件事')
+    if t_extra == 0 and reason not in ('', '—'):
+        rep.fail('L08', '没有工具追加额度，但「追加理由」写了内容，两者矛盾')
 
     for key in ('开始', '结束'):
         if cost.get(key, '') in ('', '—'):
@@ -460,13 +473,39 @@ def _allowance(rep: Report, label: str, raw: str) -> int:
         return 0
     extra = int(match.group(1))
     if extra % 4 or extra > 8:
-        rep.fail('L08', '%s 是 %s，只允许 +4 或 +8（每次 +4，最多两次，第三次必须拆）' % (label, value))
+        rep.fail('L08', '%s 是 %s，只允许 +4 或 +8（每次 +4，最多两次；再不够时报告未读清单并停下）' % (label, value))
         return 0
     return extra
 
 
+def check_autonomous(rep: Report, text: str) -> None:
+    """L09 自主决定区存在；一行一条，编号唯一且说明不为空；没有时写「无」。
+
+    这些记录供用户在批准前一次性审阅。脚本只核对编号能否被覆盖矩阵引用，
+    不判断 Agent 认定的通行做法是否正确。
+    """
+    section = section_named(text, '自主决定')
+    if section is None:
+        rep.fail('L09', 'grill.md 缺「## 自主决定」一节；没有这类决定时也要写「无」')
+        return
+    body = _COMMENT.sub('', section)
+    seen = set()
+    for code, description in _AUTONOMOUS.findall(body):
+        if code in seen:
+            rep.fail('L09', '自主决定重复编号 %s' % code)
+        seen.add(code)
+        if '<' in description or description.strip() in ('', '—'):
+            rep.fail('L09', '自主决定 %s 没写清场景和做法，或仍是模板占位' % code)
+    if not seen and not _says_none(body):
+        rep.fail('L09', '「自主决定」区没有记录，也没有写「无」')
+    rep.autonomous_ids = seen
+
+
 def check_matrix(rep: Report, text: str) -> None:
-    """L09 必做维度齐全；状态合法；不适用有理由；待决状态与问题双向对应。"""
+    """L09 每个必检维度都有落点；自主决定引用可追溯；待决与第 7 节双向对应。
+
+    脚本检查记录是否存在、依据是否指向实际记录，不判断该维度该问还是该自己定。
+    """
     section = section_named(text, '覆盖矩阵')
     if section is None:
         rep.fail('L09', 'grill.md 缺「## 覆盖矩阵」一节')
@@ -486,18 +525,27 @@ def check_matrix(rep: Report, text: str) -> None:
             rep.fail('L09', '%s 的状态「%s」不在 %s 内' % (dim, status, ' / '.join(MATRIX_STATUS)))
         if status == '不适用' and basis in ('', '—'):
             rep.fail('L09', '%s 标了「不适用」但没有给理由' % dim)
-    if rep.spec_type in REQUIRED_DIMS:
-        expected = set(REQUIRED_DIMS[rep.spec_type])
+            continue
+        if basis in ('', '—'):
+            rep.fail('L09', '%s 依据为空；须写明提问结论或自主决定编号' % dim)
+            continue
+        if status == '自主决定':
+            refs = re.findall(r'A\d+', basis)
+            if not refs:
+                rep.fail('L09', '%s 标了「自主决定」，依据须引用该区的 A<N> 编号' % dim)
+            for ref in refs:
+                if ref not in rep.autonomous_ids:
+                    rep.fail('L09', '%s 引用了不存在的自主决定记录 %s' % (dim, ref))
+    if rep.spec_type in CHECK_DIMS:
+        expected = set(CHECK_DIMS[rep.spec_type])
         actual = set(rep.matrix_status)
         for dim in sorted(expected - actual):
-            rep.fail('L09', '覆盖矩阵缺必做维度 %s' % dim)
-        for dim in sorted(actual - expected):
-            rep.fail('L09', '覆盖矩阵多出 %s 型不要求的维度 %s' % (rep.spec_type, dim))
-    required = set(REQUIRED_DIMS.get(rep.spec_type, ()))
+            rep.fail('L09', '缺检查维度 %s；须记录提问结论或自主决定' % dim)
+    required = set(CHECK_DIMS.get(rep.spec_type, ()))
     pending_required = set(rep.pending_dims) & required
     matrix_pending = {dim for dim, status in rep.matrix_status.items() if status == '待决'}
     for dim in sorted(pending_required - matrix_pending):
-        rep.fail('L09', '第 7 节将必做维度 %s 列为待决，覆盖矩阵必须标为「待决」' % dim)
+        rep.fail('L09', '第 7 节将检查维度 %s 列为待决，覆盖矩阵必须标为「待决」' % dim)
     for dim in sorted(matrix_pending - set(rep.pending_dims)):
         rep.fail('L09', '覆盖矩阵将 %s 标为「待决」，但第 7 节没有对应问题' % dim)
     rep.ok('L09')

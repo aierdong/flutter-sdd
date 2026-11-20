@@ -51,22 +51,23 @@ def documents(spec_type='new', pending_dim=None, matrix_status=None,
     matrix_status = matrix_status or {}
     matrix = '\n'.join(
         '| %s 访谈维度 | %s | %s |' % (
-            dim, matrix_status.get(dim, '已覆盖'),
+            dim, matrix_status.get(dim, '已问'),
             '§7 第 1 题' if matrix_status.get(dim) == '待决' else 'R1 与 §5',
         )
-        for dim in lint.REQUIRED_DIMS[spec_type]
+        for dim in lint.CHECK_DIMS[spec_type]
     )
     grill = (
         '# 导入文件决策日志\n\n'
         '| 成本 | 值 |\n|---|---|\n'
-        '| 类型 | %s |\n| 问题数 | 1 |\n| 问题上限 | %d |\n'
-        '| 问题追加 | — |\n| 工具调用 | 1 |\n| 工具预算 | %d |\n'
+        '| 类型 | %s |\n| 问题数 | 1 |\n| 基础额度 | %d |\n'
+        '| 深挖 | 0 |\n| 工具调用 | 1 |\n| 工具预算 | %d |\n'
         '| 工具追加 | — |\n| 追加理由 | — |\n'
         '| 开始 | 2026-01-01 10:00 |\n| 结束 | 2026-01-01 10:01 |\n'
         '| 重问 | 0 |\n'
         '\n## 规范触碰\n无\n'
+        '\n## 自主决定\n无\n'
         '\n## 覆盖矩阵\n| 维度 | 状态 | 依据 |\n|---|---|---|\n%s\n'
-    ) % (spec_type, lint.question_limit(spec_type), lint.TOOL_BUDGET[spec_type], matrix)
+    ) % (spec_type, lint.base_question_budget(spec_type), lint.TOOL_BUDGET[spec_type], matrix)
     return spec, grill
 
 
@@ -85,14 +86,14 @@ class SddLintTest(unittest.TestCase):
         )
 
     def test_complete_documents_pass_for_each_type(self):
-        for spec_type in lint.REQUIRED_DIMS:
+        for spec_type in lint.CHECK_DIMS:
             with self.subTest(spec_type=spec_type):
                 rep = self.check_documents(spec_type=spec_type)
                 self.assertEqual([], rep.failures)
                 self.assertEqual(lint.TOTAL_RULES, len(rep.checked))
 
     def test_pending_question_and_matrix_pass_for_each_type(self):
-        for spec_type in lint.REQUIRED_DIMS:
+        for spec_type in lint.CHECK_DIMS:
             with self.subTest(spec_type=spec_type):
                 rep = self.check_documents(
                     spec_type=spec_type, pending_dim='D1', matrix_status={'D1': '待决'},
@@ -100,7 +101,7 @@ class SddLintTest(unittest.TestCase):
                 self.assertEqual([], rep.failures)
 
     def test_pending_question_requires_pending_matrix_status(self):
-        for status in ('已覆盖', '不适用', '已推翻并说明'):
+        for status in ('已问', '自主决定', '不适用', '已推翻并说明'):
             with self.subTest(status=status):
                 rep = self.check_documents(pending_dim='D1', matrix_status={'D1': status})
                 self.assert_failure(rep, '覆盖矩阵必须标为「待决」')
@@ -111,7 +112,7 @@ class SddLintTest(unittest.TestCase):
 
     def test_different_pending_dimensions_fail_both_directions(self):
         rep = self.check_documents(pending_dim='D1', matrix_status={'D2': '待决'})
-        self.assert_failure(rep, '必做维度 D1')
+        self.assert_failure(rep, '检查维度 D1')
         self.assert_failure(rep, '覆盖矩阵将 D2')
 
     def test_approved_with_pending_question_fails(self):
@@ -208,7 +209,7 @@ class FieldRecordTest(SddLintTest):
         return rep
 
     def test_new_format_has_no_tables(self):
-        for spec_type in lint.REQUIRED_DIMS:
+        for spec_type in lint.CHECK_DIMS:
             with self.subTest(spec_type=spec_type):
                 spec, grill = field_documents(spec_type=spec_type)
                 self.assertNotIn('|', spec + grill)
@@ -220,7 +221,7 @@ class FieldRecordTest(SddLintTest):
         grill = grill.replace('## 规范触碰\n无', '## 规范触碰\n' + TOUCH_RECORD)
         grill = grill.replace('R1 与 §5', '`R1 | §5 | 另一个依据`')
         grill = grill.replace('日志不含密钥', '日志使用 a|<b|c，命令为 `a | b`')
-        grill = grill.replace('- 问题追加：`—`', '- 问题追加：`+4`')
+        grill = grill.replace('- 工具追加：`—`', '- 工具追加：`+4`')
         grill = grill.replace('- 追加理由：`—`', '- 追加理由：用户批准 a|b，仍为同一需求')
         self.assertEqual([], self.validate(spec, grill).failures)
         self.assertEqual('用户批准 a|b，仍为同一需求',
@@ -268,7 +269,7 @@ class FieldRecordTest(SddLintTest):
             ('spec', '- Spec：`p99-901-import`', 'L01'),
             ('grill', '- 类型：`new`', 'L08'),
             ('grill', '- 维度：D1 访谈维度', 'L09'),
-            ('grill', '- 状态：已覆盖', 'L09'),
+            ('grill', '- 状态：已问', 'L09'),
             ('grill', '- 条款：SEC-3', 'L10'),
             ('grill', '- 依据：docs/standards/security.md:12，日志不含密钥', 'L10'),
         ):
@@ -285,7 +286,7 @@ class FieldRecordTest(SddLintTest):
 
     def test_duplicate_records_and_titles_fail(self):
         spec, grill = field_documents()
-        block = '#### 维度 另一个标题\n- 维度：D1\n- 状态：已覆盖\n- 依据：R1\n'
+        block = '#### 维度 另一个标题\n- 维度：D1\n- 状态：已问\n- 依据：R1\n'
         self.assert_failure(self.validate(spec, grill + block), '重复记录维度 D1')
         block = block.replace('另一个标题', 'D1').replace('- 维度：D1', '- 维度：D2')
         self.assert_failure(self.validate(spec, grill + block), '重复记录标题')
@@ -307,15 +308,19 @@ class FieldRecordTest(SddLintTest):
 
     def test_missing_extra_and_invalid_dimensions_fail(self):
         for old, new, message in (
-            ('- 维度：D1 访谈维度', '- 维度：Z9', '缺必做维度 D1'),
-            ('- 维度：D1 访谈维度', '- 维度：Z9', '多出'),
+            ('- 维度：D1 访谈维度', '- 维度：Z9', '缺检查维度 D1'),
             ('- 维度：D1 访谈维度', '- 维度：不是编号', '必须以维度 ID 开头'),
-            ('- 状态：已覆盖', '- 状态：未知', '状态'),
-            ('- 状态：已覆盖\n- 依据：R1 与 §5', '- 状态：不适用\n- 依据：—', '没有给理由'),
+            ('- 状态：已问', '- 状态：未知', '状态'),
+            ('- 状态：已问\n- 依据：R1 与 §5', '- 状态：不适用\n- 依据：—', '没有给理由'),
         ):
             with self.subTest(message=message):
                 spec, grill = field_documents()
                 self.assert_failure(self.validate(spec, grill.replace(old, new, 1)), message)
+
+    def test_extra_check_dimension_is_allowed(self):
+        spec, grill = field_documents()
+        extra = '#### 维度 Z9 额外检查\n- 维度：Z9 额外检查\n- 状态：已问\n- 依据：R1 与 §5\n'
+        self.assertEqual([], self.validate(spec, grill + extra).failures)
 
     def test_cost_fields_do_not_leak_from_later_records(self):
         spec, grill = field_documents()
@@ -325,7 +330,7 @@ class FieldRecordTest(SddLintTest):
     def test_mixed_legacy_and_new_duplicate_keys_fail(self):
         spec, grill = field_documents()
         spec = spec.replace('- 类型：`new`', '- 类型：`new`\n| 类型 | new |')
-        grill += '| D1 访谈维度 | 已覆盖 | R1 |\n'
+        grill += '| D1 访谈维度 | 已问 | R1 |\n'
         rep = self.validate(spec, grill)
         self.assert_failure(rep, '重复字段「类型」')
         self.assert_failure(rep, '重复记录维度 D1')
@@ -357,18 +362,47 @@ class FieldRecordTest(SddLintTest):
 
     def test_cost_allowances_and_limits(self):
         for old, new, message in (
-            ('- 问题数：`1`', '- 问题数：`13`', '超过上限'),
+            ('- 问题数：`1`', '- 问题数：`13`', '超过基础额度'),
             ('- 工具调用：`1`', '- 工具调用：`9`', '超过预算'),
-            ('- 问题追加：`—`', '- 问题追加：`+3`', '只允许 +4 或 +8'),
+            ('- 工具追加：`—`', '- 工具追加：`+3`', '只允许 +4 或 +8'),
             ('- 工具追加：`—`', '- 工具追加：`+4`', '说明谁批准'),
+            ('- 深挖：`0`', '- 深挖：`-1`', '不能为负'),
+            ('- 深挖：`0`', '- 深挖：`三次`', '不是整数'),
+            ('- 基础额度：`12`', '- 基础额度：`9`', '不按维度数推算'),
             ('- 类型：`new`', '- 类型：`fix`', '不一致'),
         ):
             with self.subTest(message=message):
                 spec, grill = field_documents()
                 self.assert_failure(self.validate(spec, grill.replace(old, new, 1)), message)
 
+    def test_deep_dive_does_not_consume_base_budget(self):
+        spec, grill = field_documents()
+        grill = grill.replace('- 问题数：`1`', '- 问题数：`12`')
+        grill = grill.replace('- 深挖：`0`', '- 深挖：`7`')
+        self.assertEqual([], self.validate(spec, grill).failures)
+
+    def test_autonomous_records_are_required_and_traceable(self):
+        spec, grill = field_documents()
+        self.assert_failure(
+            self.validate(spec, grill.replace('## 自主决定\n无\n', '')),
+            '缺「## 自主决定」',
+        )
+        no_ref = grill.replace('- 状态：已问', '- 状态：自主决定', 1).replace(
+            '- 依据：R1 与 §5', '- 依据：按通行做法处理', 1)
+        self.assert_failure(self.validate(spec, no_ref), '须引用该区的 A<N> 编号')
+        missing_ref = grill.replace('- 状态：已问', '- 状态：自主决定', 1).replace(
+            '- 依据：R1 与 §5', '- 依据：A9', 1)
+        self.assert_failure(self.validate(spec, missing_ref), '不存在的自主决定记录 A9')
+        good = grill.replace(
+            '## 自主决定\n无',
+            '## 自主决定\n- A1 启动时数据库不可达：按命令行工具的通行做法停止启动并报错。',
+        )
+        good = good.replace('- 状态：已问', '- 状态：自主决定', 1).replace(
+            '- 依据：R1 与 §5', '- 依据：A1', 1)
+        self.assertEqual([], self.validate(spec, good).failures)
+
     def test_field_entry_point(self):
-        for spec_type in lint.REQUIRED_DIMS:
+        for spec_type in lint.CHECK_DIMS:
             with self.subTest(spec_type=spec_type), tempfile.TemporaryDirectory() as root:
                 spec, grill = field_documents(spec_type=spec_type)
                 folder = Path(root) / 'p99-901-import'
